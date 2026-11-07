@@ -1,7 +1,7 @@
 # Verification record (release 0.1.0)
 
 Execution records dated 2026-11-07. The follow-up submission preparation
-section separately identifies changes and expectations not yet run on Linux.
+section records later agent-run Linux verification of the working-tree edits.
 Figures refer to commit `582ffa3` (after both reviews) unless a row says
 otherwise; this record itself was committed afterwards. All runs were made by
 the AI coding agent in the author's WSL environment; the external reviewer
@@ -292,12 +292,13 @@ no new false pass in the inspection core. Its items and their resolution:
 
 Prepared after `2d51573` by the external AI reviewer on 2026-11-07. The
 Linux execution tables above remain evidence for their explicitly named
-revisions; they have not been rerun for these follow-up changes.
+revisions. Later Linux runs against the follow-up working tree are recorded
+in the results table below.
 
 - The demo prerequisite is now scoped to `corrected_demo`. The defective
   launcher test no longer skips merely because the hard descriptor limit is
   below 1024. Source-level checks with mocked limits verify the fixture
-  branching; actual demo and full-suite Linux runs are still required.
+  branching; subsequent demo and full-suite Linux runs are recorded below.
 - `DEVELOPER_NOTES.md` now gives complete practice-clone commands, rebuilds
   before and after mutations, controls the umask for the NUL demonstration,
   and makes CTest fail if the targeted test is absent. The candidate has not
@@ -321,10 +322,25 @@ against the working tree containing the follow-up edits (base `2d51573`):
 |---|---|
 | `scripts/verify.sh` (fresh build root) | exit 0; both builds register 102 unit + 1 component entry; 103/103 each; clang-format clean |
 | `test_demo.py` at normal limits | 4 passed |
-| `test_demo.py` under `prlimit --nofile=128:128` | 1 passed (defective launcher), 3 skipped (corrected launcher) — matches the expectation above |
+| `test_demo.py` under `prlimit --nofile=128:128` | 1 passed (defective launcher), 3 skipped (corrected launcher) |
 | Component suite at 10240:1048576 / 1024:1024 / 128:128 | 96 passed / 94 passed, 2 skipped / **88 passed, 8 skipped** (previously 87 / 9: the defective-launcher test now runs) |
 | `DEVELOPER_NOTES.md` E1 commands, verbatim, in a practice clone of `2d51573` | Baseline 103/103. Without the scanner exclusion both contamination tests fail (`count` 4 instead of 3 for fd 3; fd 0 reported `pass` instead of `fail`/`missing`); after `git restore`, 2 passed |
 | E2 commands, verbatim | Baseline exit 2 and `EmbeddedNul` test passes; without the NUL guard exit **0** and the test fails; after restore exit 2 and passing |
 
 These runs check that the rehearsal instructions work as written. They are
 not the author's rehearsal, which remains to be done.
+
+### Profile and licence documentation update
+
+The subsequent documentation update uses the candidate's supplied profile
+to connect the reflection to their Python, ECU diagnostic-test, pytest and
+CI/CD background. It retains the distinction between project direction and
+agent-performed implementation, testing and debugging. Personal completion
+of E1 and E2 has not been reported.
+
+An MIT licence was added at the candidate's request to choose the licence
+on their behalf, with the supplied name Sreya Thota in the notice. README,
+progress notes and stale statements about pending Linux execution were
+updated. This update changes documentation and licensing only; the recorded
+Linux runs above preceded it. It does not claim another execution of the
+test suites or a candidate-performed rehearsal.

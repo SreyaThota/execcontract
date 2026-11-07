@@ -1,16 +1,22 @@
 # ExecContract technical reflection
 
-## Contribution and use of AI
+## Background and contribution
 
-I asked for a comparison of projects for this assignment, pursued ExecContract,
-and requested critical reviews and follow-up fixes. The detailed engineering
-brief was developed with AI assistance. Claude Code wrote the implementation,
-tests and initial documentation and ran the Linux checks recorded in
-`docs/verification.md`. Further AI reviews identified defects and overstated
-claims. This essay was also drafted with AI assistance. My contribution at
-this stage is initiating the project and requesting assistance and reviews;
-I have not yet independently reviewed or exercised the implementation.
-The recorded results describe agent-run verification.
+I am an M.Sc. Artificial Intelligence student at BTU Cottbus-Senftenberg
+with about two years of professional Python experience. At Nav Tech
+Electronics, my work included generating structured ECU diagnostic test
+cases, writing pytest suites and improving CI/CD workflows. ExecContract
+connects that testing background to Linux process state and C++ resource
+ownership.
+
+I initiated the project, requested a comparison of ideas, and commissioned
+implementation, critical reviews and follow-up fixes. The engineering brief
+was developed with AI assistance. Claude Code wrote the implementation,
+tests and initial documentation and ran the recorded Linux verification.
+Codex contributed review, targeted fixes and documentation. This reflection
+was also prepared with AI assistance. My contribution has been project
+direction and requesting review; the recorded implementation, testing and
+debugging were performed by the agents.
 
 ## Purpose and scope
 
@@ -21,40 +27,40 @@ It compares its own execution context with a versioned JSON contract and
 returns a structured report and an exit code.
 
 The scope covers five areas: inherited file descriptors, physical working
-directory, umask, `RLIMIT_NOFILE` and `RLIMIT_CORE`. These are concrete launcher
-properties with useful failure cases and manageable tests. Environment
-variables, signal-state inspection and process supervision remain outside
-this release. Existing tools such as procenv already expose extensive process
-information. ExecContract focuses on enforceable expectations and clear
-failure semantics. Its observations describe the probe during initial
-collection, after the loader and runtime have run; they are sequential,
-not an atomic snapshot of `execve` or proof of the real service's later state.
+directory, umask, `RLIMIT_NOFILE` and `RLIMIT_CORE`. These are concrete
+launcher properties with useful failure cases and manageable tests.
+Environment variables, signal-state inspection and process supervision
+remain outside this release. Existing tools such as procenv already expose
+extensive process information. ExecContract focuses on enforceable
+expectations and explicit failure semantics. Its observations are collected
+sequentially after the loader and runtime have run; they are not an atomic
+snapshot of `execve` or proof of the real service's later state.
 
 ## Organisation and verification
 
 The C++17 implementation consists of a static core library and a thin
 `main()`. The observation module reads Linux process state. Contract
-validation, evaluation and report rendering operate on value types. Resource
-ownership is explicit: RAII wrappers close descriptors the probe opens,
-while inherited descriptor numbers are borrowed and must remain open.
+validation, evaluation and report rendering operate on value types.
+RAII wrappers release descriptors the probe opens, while inherited
+descriptor numbers are borrowed and must remain open.
 
 GoogleTest exercises parsing, evaluation, reporting and the collectors.
-Narrow seams allow tests to use a controlled directory or status file and to
+Narrow seams allow tests to use a controlled directory or status file and
 inject a `readdir` failure. Python component tests launch the compiled binary
 through a separate `python -I` helper. That helper installs the requested
-descriptors, directory, umask and resource limits, restores default SIGPIPE
-handling and executes the probe. This keeps process-wide changes out of the
-pytest process. CTest and subprocess timeouts bound the verification runs.
+descriptors, directory, umask and limits, restores default SIGPIPE handling
+and executes the probe. This keeps process-wide changes out of pytest.
+CTest and subprocess timeouts bound the verification runs.
 
-The recorded Linux verification at commit `582ffa3` reports 102 unit tests
-and 96 component tests passing normally. The sanitizer configuration runs
-the unit tests and 81 component tests, excluding 15 cases whose exact
-descriptor expectations can be disturbed by instrumentation. The evidence
-also records a clean clone, reduced descriptor limits and ten detected
-mutants at an earlier revision. These are distinct checks, not a guarantee
-of correctness. Only one WSL Linux configuration has been verified; the
-external review could inspect the source but could not reproduce those
-Linux runs.
+The verification record reports 102 unit tests and 96 component tests passing
+normally. Sanitizer runs include the unit tests and 81 component tests;
+15 cases requiring an exact descriptor inventory are excluded because
+instrumentation can alter that inventory. The follow-up Linux run reports
+88 component tests passing and eight skipping under a hard descriptor limit
+of 128. Ten injected mutants were detected at an earlier recorded revision.
+The record also documents a clean clone and the successful removal and
+restoration of the scanner and NUL guards. These checks were performed by
+agents on one WSL Linux configuration; other distributions remain unverified.
 
 ## Decisions and limitations
 
@@ -63,9 +69,9 @@ opening the contract or report. Even enumeration changes the state being
 observed: `opendir("/proc/self/fd")` opens a descriptor. If fd 3 was absent,
 the scanner may take number 3. Excluding the actual `dirfd()` prevents the
 tool from satisfying a requirement with its own temporary resource.
-`fstat` identifies each inherited object's type, including an open file
-whose pathname has been deleted. Reading `Umask:` from `/proc/self/status`
-avoids temporarily changing the umask to inspect it.
+`fstat` identifies an inherited object's type even when its pathname has
+been deleted. Reading `Umask:` from `/proc/self/status` avoids temporarily
+changing the umask to inspect it.
 
 The report distinguishes a known violation from an observation failure.
 Unknown values are never represented as zero, an empty inventory or
@@ -74,36 +80,37 @@ preserving them in the report. Strict input validation also matters: review
 found that a raw NUL could terminate JSON parsing early and conceal a
 stricter suffix. The parser now rejects that input, with regression coverage.
 
-Reviews also exposed weaknesses in the tests themselves. The old launcher
+Reviews exposed weaknesses in the tests themselves. The old launcher
 required 1,564 descriptor numbers even when a test needed none, and the
 verification script could succeed without running tests from a stale build
 cache. The revised launcher stages descriptors when needed; verification
 forces its build options and checks test registration. A pipe test now
-drains concurrently instead of assuming sufficient pipe capacity. Other
-findings required narrower documentation: output may block behind a stalled
-reader, and a report write failure can leave an empty or partial file. The
-caller needs a timeout; atomic report publication remains future work.
+drains concurrently instead of assuming sufficient capacity. Other findings
+required narrower documentation: output can block behind a stalled reader,
+and a report write failure can leave an empty or partial file. Callers need
+a timeout; atomic report publication remains future work.
 
 ## Reflection
 
-The decision I would defend most is the separation between a failed
-requirement and missing evidence. A launcher can provide the wrong state,
-but a probe can also fail to obtain trustworthy state. An automated test
-must distinguish these cases. This is a more useful basis for the design
-than collecting as many process attributes as possible.
+My professional experience includes building a Python pipeline for structured
+ECU diagnostic test cases, writing pytest suites and improving CI/CD workflows.
+ExecContract connects that background to an earlier point in the testing
+chain: whether a launcher supplies the execution context a component expects.
 
-The review findings also show why a green test run needs context. Test
-selection, inherited limits and instrumentation affect what was actually
-checked. I would treat the verification script and launcher fixtures as
-part of the engineering problem, with explicit assumptions and observable
-failures. The same discipline applies to documentation: a narrower promise
-that matches the implementation is more useful than an ambitious guarantee
-the code cannot support.
+The decision I would defend most is distinguishing a violated requirement
+from an inspection failure. A known incorrect value and an unavailable
+observation need different outcomes. For automation, that distinction makes
+a report actionable: it separates a launch-configuration problem from a
+problem with collecting evidence.
 
-My contribution so far has been directing the project and requesting
-critical review. Independent implementation and debugging ability need
-separate evidence. My next step is to reproduce the scanner and NUL
-regressions, explain their fixes without notes, and make a small change
-whose consequences I can demonstrate. If I repeated the project, I would
-alternate smaller assisted implementation steps with my own builds and
-debugging sessions, so that understanding developed alongside the code.
+The recorded review findings also make test infrastructure an important part
+of this project. A verification script can finish successfully without running
+tests, and a fixture can fail because it assumes generous descriptor limits.
+These cases reinforce the need to check what actually ran and under which
+conditions, rather than treating a green status as sufficient evidence.
+
+I would preserve the narrow scope and explicit failure semantics. For a
+subsequent release, I would prioritize automated Linux verification across
+another environment and atomic report publication. Those improvements would
+strengthen repeatability and reliability without expanding the probe into a
+larger monitoring framework.

@@ -239,10 +239,10 @@ python3 -m pytest -p no:cacheprovider tests/component/test_demo.py -rs
 ctest --test-dir build --output-on-failure --no-tests=error
 ```
 
-Expected at 128:128: the defective-launcher case runs and passes, while the
-three cases involving the corrected launcher skip. At normal limits all
-four should pass. These expectations still need Linux execution for the
-follow-up revision; source-level fixture checks are not a substitute.
+The agent-run Linux validation recorded 1 passed and 3 skipped at 128:128,
+and 4 passed at normal limits; see `docs/verification.md`, the follow-up
+Linux results. These are the expected results when you reproduce this
+exercise. The recorded agent run does not establish your personal rehearsal.
 
 In the practice clone, move the guard back to the shared fixture and repeat
 the low-limit command. Explain why this reduces coverage without changing

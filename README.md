@@ -270,7 +270,9 @@ descriptor, contract and report handles) as a first-class correctness issue.
 
 ## Licence and third-party code
 
+ExecContract is licensed under the [MIT License](LICENSE).
+
 All code in this repository was written for this project. It uses, without
 vendoring, [nlohmann/json](https://github.com/nlohmann/json) (MIT) and
 [GoogleTest](https://github.com/google/googletest) (BSD-3-Clause), installed
-as system packages. No licence has been chosen for ExecContract itself yet.
+as system packages. Their respective licences continue to apply.

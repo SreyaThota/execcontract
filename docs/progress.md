@@ -10,7 +10,7 @@ Evidence (commands, outputs, counts) is in `docs/verification.md`.
 | 2 Core behaviour | done | Written before the toolchain existed, then verified in one pass: 93 unit tests green on first build after fixing test-only warnings. |
 | 3 Component hardening | done | 85 → 96 pytest tests; mutation check 9/10 → 10/10; ASan contaminates `RLIMIT_CORE` (configured with `disable_coredump=0`). |
 | 4 Completion | done | Docs, essay, verification record, independent AI review (F1–F9 fixed or documented), clean-clone README check. |
-| 5 Second review | done (author steps open) | External static review: verify.sh could pass without tests, launcher/limit and pipe-capacity assumptions, overstated guarantees, essay authorship. All fixed or narrowed; suite now run under nofile limits down to 128:128. Author must write the essay's marked sections and do the DEVELOPER_NOTES exercises. |
+| 5 Second review | done (author steps open) | External static review: verify.sh could pass without tests, launcher/limit and pipe-capacity assumptions, overstated guarantees, essay authorship. All fixed or narrowed; suite now run under nofile limits down to 128:128. The assisted essay is complete; personal DEVELOPER_NOTES rehearsal remains unreported. |
 
 ## Decisions taken during the work
 
@@ -22,12 +22,12 @@ Evidence (commands, outputs, counts) is in `docs/verification.md`.
 * One injectable seam added (`readdir`) after the mutation check showed an
   untested branch.
 
-## Open items (not blocking 0.1.0)
+## Submission status and remaining work
 
-* Essay: author's contribution statement and reflection (marked in
-  `docs/essay.md`).
-* DEVELOPER_NOTES exercise E3 (demo fixture over-skips at low limits).
-* No licence chosen for the project.
+* Candidate's personal E1/E2 rehearsal and review of the assisted reflection
+  remain unreported. The essay accurately attributes agent-performed work.
+* E3 is fixed and agent-verified at normal and reduced descriptor limits.
+* MIT licence selected on the candidate's behalf; see `LICENSE`.
 * Nothing pushed or published; no CI.
 * Roadmap hardening items (atomic report write, `O_PATH` contract open,
   fuzzing, multi-distro CI).
