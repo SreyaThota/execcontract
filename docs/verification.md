@@ -138,8 +138,14 @@ commands (`ctest -L unit`, `ctest -L component`, direct pytest) and
 First attempt (commit `d968192`): build and all tests passed, but the README
 demo command failed — `run-demo.sh` changed directory before running a
 **relative** binary path (`build/execcontract: not found`). Fixed in
-`6b5ee65`, with a regression test that fails on the old script. Final result:
-see the end of this file.
+`6b5ee65`, with a regression test that fails on the old script.
+
+Final run (commit `d69ba67`): configure OK, build 0 warnings, `ctest` 100 %
+of 103; demo exit 0 (defective launcher 1, corrected 0); `ctest -L unit`
+102/102, `ctest -L component` 1/1, direct pytest 96 passed; install to a
+`DESTDIR` staging directory produced `usr/local/bin/execcontract`;
+`--version` prints `execcontract 0.1.0`. Scripts kept their executable bit
+and LF line endings through the clone.
 
 ## Skipped or unverified
 
