@@ -47,9 +47,14 @@ def test_corrected_launcher_satisfies_contract(demo, binary):
     assert report["outcome"] == "passed"
 
 
-def test_run_demo_script(demo, binary):
+@pytest.mark.parametrize("relative", [False, True], ids=["absolute-binary", "relative-binary"])
+def test_run_demo_script(demo, binary, relative):
+    # The README runs the demo with a relative path (build/execcontract);
+    # the script changes directory, so both forms must work.
+    arg = f"./{binary.name}" if relative else str(binary)
     proc = subprocess.run(
-        ["/bin/sh", str(demo / "run-demo.sh"), str(binary)],
+        ["/bin/sh", str(demo / "run-demo.sh"), arg],
+        cwd=binary.parent,
         stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=TIMEOUT,

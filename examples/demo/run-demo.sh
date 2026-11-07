@@ -14,6 +14,12 @@ if [ -z "$bin" ] || [ ! -x "$bin" ]; then
     echo "usage: $0 PATH/TO/execcontract   (or set EXECCONTRACT_BIN)" >&2
     exit 2
 fi
+# The launchers run from this directory, so a relative path must be made
+# absolute first.
+case $bin in
+    /*) ;;
+    *) bin="$(pwd -P)/$bin" ;;
+esac
 contract="$here/contract.json"
 
 run() {
