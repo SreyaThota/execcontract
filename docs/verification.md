@@ -1,7 +1,11 @@
 # Verification record (release 0.1.0)
 
 Everything below was executed; nothing is extrapolated. Date: 2026-11-07.
-Figures refer to the final tree (after the independent-review fixes).
+Figures refer to commit `582ffa3` (after both reviews) unless a row says
+otherwise; this record itself was committed afterwards. All runs were made by
+the AI coding agent in the author's WSL environment; the external reviewer
+could not execute Linux builds, so none of these results has been reproduced
+independently yet.
 
 ## Reference environment
 
@@ -25,24 +29,60 @@ clean-clone check below used a clone on ext4.
 ## Full verification
 
 ```bash
-scripts/verify.sh ~/ec-verify     # fresh build root
+git clone <repo> ~/clean2 && cd ~/clean2
+scripts/verify.sh ~/clean2-verify     # fresh clone, fresh build root
 ```
 
-Exit status 0. Steps and results:
+Exit status 0 at `582ffa3`. Steps and results:
 
 | Step | Configuration | Result |
 |---|---|---|
-| Normal build | RelWithDebInfo, `-DEXECCONTRACT_WERROR=ON` | 0 warnings |
-| Normal tests | `ctest` | 100 % passed, 0 failed out of 103 (102 unit tests + 1 component entry running 96 pytest tests) |
-| Sanitizer build | Debug, `-DEXECCONTRACT_SANITIZE=ON` (ASan + UBSan, `-fno-sanitize-recover=all`), `-Werror` | 0 warnings |
-| Sanitizer tests | `ctest` | 100 % passed, 0 failed out of 103 (102 unit; 85 component, 11 `exact_fds` deselected by design) |
+| Normal build | RelWithDebInfo, `BUILD_TESTS=ON`, `SANITIZE=OFF`, `WERROR=ON` | 0 warnings; registered 102 unit tests + 1 component entry |
+| Normal tests | `ctest --no-tests=error` | 100 % passed, 0 failed out of 103 (102 unit + 1 component entry running 96 pytest tests) |
+| Sanitizer build | Debug, `BUILD_TESTS=ON`, `SANITIZE=ON` (ASan + UBSan, `-fno-sanitize-recover=all`), `WERROR=ON` | 0 warnings; registered 102 + 1 |
+| Sanitizer tests | `ctest --no-tests=error` | 100 % passed, 0 failed out of 103 (102 unit; 81 component, 15 `exact_fds` deselected by design) |
 | Formatting | `clang-format --dry-run --Werror` on `src/`, `tests/unit/` | clean |
 
 Component tests run directly on the normal build: **96 passed, 0 skipped**.
-Under ASan the 85 compatible tests pass; the 11 `exact_fds` tests were also
+Under ASan the 81 compatible tests pass; the 15 `exact_fds` tests were also
 run against the ASan binary for information and passed in this environment,
 but they are not part of the sanitizer configuration because extra runtime
 descriptors are environment-dependent. No ASan or UBSan report occurred.
+
+### The verification script cannot pass without tests
+
+Before `6c4993b`, `verify.sh` reused build directories without forcing test
+options. Evidence, with a build root whose caches were configured with
+`EXECCONTRACT_BUILD_TESTS=OFF` (and `SANITIZE=ON` in the "normal" directory):
+
+| Script | Exit | What happened |
+|---|---|---|
+| old (`d69ba67`) | **0** | ctest printed "No tests were found!!!" for both builds; the "normal" build was sanitized |
+| new (`6c4993b`+) | 0 | options forced; 102 unit + 1 component registered in both builds; 103/103 each; normal cache `SANITIZE=OFF` |
+
+The new script also exits non-zero if either test kind is not registered, and
+unit tests have a 30 s CTest timeout.
+
+## Descriptor-limit matrix
+
+The suite was run from the clean clone under `prlimit --nofile=SOFT:HARD`
+(component: direct pytest; unit: the gtest binary):
+
+| Limit | Unit | Component |
+|---|---|---|
+| 10240 : 1048576 (default here) | 102 passed | 96 passed |
+| 4096 : 4096 | 102 passed | 96 passed |
+| 1024 : 1024 | 102 passed | 94 passed, 2 skipped (inventory-cap tests need hard ≥ 2048) |
+| 256 : 4096 | 102 passed | 96 passed |
+| 128 : 128 | 101 passed, 1 skipped (fd 500 cannot be placed) | 87 passed, 9 skipped (cap, high-fd, demo and two limit tests: each states the limit it needs) |
+
+`prlimit --nofile=128:128 -- ctest` (the CONTRIBUTING command): 100 % of 103.
+
+Before `6c4993b` the launcher demanded 1 564 descriptor numbers for every
+test: the old suite under 1024:1024 gave **90 failed, 4 passed, 2 skipped**
+("launcher setup failed"), and `test_nofile_mismatch` failed under 128:128.
+Both were found by running this matrix, the first also by the external
+review.
 
 ## Static analysis
 
@@ -77,7 +117,8 @@ runs both suites. A useful test suite must fail.
 | cwd taken from `$PWD` | 4 | 12 |
 | A descriptor opened before the snapshot | 0 | 11 |
 
-All 10 mutants are detected. Before the review fixes, the `readdir`-error
+Measured at `58da58d` (the later changes touch tests and fixtures, not the
+mutated code paths). All 10 mutants are detected. Before the review fixes, the `readdir`-error
 mutant survived both suites; it is now caught by
 `FdScan.ReaddirErrorMidwayIsAnErrorNotEndOfDirectory` through the injected
 `readdir` seam (unit level only — a real procfs `readdir` failure still
@@ -93,23 +134,27 @@ not remounted; the failed lookup is the evidence of no network.)
 ## Latency (NFR-8)
 
 `scripts/measure_latency.py build/execcontract 200` — 200 sequential runs with
-`examples/minimal.json`, timed around `subprocess.run` (includes fork/exec,
-loading and teardown), normal build. Every measurement taken is listed:
+`examples/minimal.json` (located next to the script), timed around
+`subprocess.run` (includes fork/exec, loading and teardown), normal build.
+Every measurement taken is listed:
 
-| Run | Build | Median | p95 | Max |
-|---|---|---|---|---|
-| 1 | before review fixes | 4.14 ms | 5.91 ms | 9.37 ms |
-| 2 | before review fixes | 3.97 ms | 6.90 ms | 10.28 ms |
-| 3 | final (directly after two builds) | 7.11 ms | 26.56 ms | 33.31 ms |
-| 4 | final | 6.34 ms | 29.07 ms | 35.18 ms |
-| 5 | final | 12.70 ms | 30.28 ms | 35.18 ms |
-| 6 | final | 8.10 ms | 28.47 ms | 39.72 ms |
+| Run | Commit | Contract on | Median | p95 | Max |
+|---|---|---|---|---|---|
+| 1 | `a81a40a` | drvfs (`/mnt/d`) | 4.14 ms | 5.91 ms | 9.37 ms |
+| 2 | `a81a40a` | drvfs | 3.97 ms | 6.90 ms | 10.28 ms |
+| 3 | `58da58d` (directly after two builds) | drvfs | 7.11 ms | 26.56 ms | 33.31 ms |
+| 4 | `58da58d` | drvfs | 6.34 ms | 29.07 ms | 35.18 ms |
+| 5 | `58da58d` | drvfs | 12.70 ms | 30.28 ms | 35.18 ms |
+| 6 | `58da58d` | drvfs | 8.10 ms | 28.47 ms | 39.72 ms |
+| 7 | `582ffa3` | ext4 (clean clone) | 0.90 ms | 1.64 ms | 2.33 ms |
+| 8 | `582ffa3` | ext4 | 0.93 ms | 1.34 ms | 2.15 ms |
+| 9 | `582ffa3` | ext4 | 0.93 ms | 1.42 ms | 3.25 ms |
 
 Target ≤ 20 ms median: **met in every run** on the reference environment.
-Variance between runs on WSL2 is large (median 4–13 ms, p95 up to 30 ms); the
-review fixes add one `stat` only when `--report` is used, which these runs do
-not use, so the spread is attributed to host load rather than the code, but
-that attribution is not proven. No p95 target was set. Not measured elsewhere.
+Correction to the earlier interpretation: runs 1–6 opened the contract from
+the Windows drive through WSL's drvfs mount, so they mostly measured that
+file system (and its variance), not the probe. With the contract on ext4 the
+median is about 0.9 ms. No p95 target was set. Not measured elsewhere.
 
 ## Demonstration (FR-14)
 
@@ -140,20 +185,26 @@ demo command failed — `run-demo.sh` changed directory before running a
 **relative** binary path (`build/execcontract: not found`). Fixed in
 `6b5ee65`, with a regression test that fails on the old script.
 
-Final run (commit `d69ba67`): configure OK, build 0 warnings, `ctest` 100 %
-of 103; demo exit 0 (defective launcher 1, corrected 0); `ctest -L unit`
-102/102, `ctest -L component` 1/1, direct pytest 96 passed; install to a
-`DESTDIR` staging directory produced `usr/local/bin/execcontract`;
-`--version` prints `execcontract 0.1.0`. Scripts kept their executable bit
-and LF line endings through the clone.
+Run at `d69ba67`: configure OK, build 0 warnings, `ctest` 100 % of 103; demo
+exit 0 (defective launcher 1, corrected 0); `ctest -L unit` 102/102,
+`ctest -L component` 1/1, direct pytest 96 passed; install to a `DESTDIR`
+staging directory produced `usr/local/bin/execcontract`; `--version` prints
+`execcontract 0.1.0`. Scripts kept their executable bit and LF line endings.
+
+Final run at `582ffa3` (fresh clone `~/clean2`): `verify.sh` exit 0 (table
+above); README commands — build 0 warnings, `ctest` 100 % of 103, demo exit
+0; `prlimit --nofile=128:128 -- ctest` 100 % of 103; descriptor-limit matrix
+above. All files in the index have LF line endings (`git ls-files --eol`).
 
 ## Skipped or unverified
 
 | Item | Status |
 |---|---|
-| Conditional component skips (hard limits too low, non-UTF-8 names rejected, finite hard `RLIMIT_CORE`, root) | None triggered in the reference environment |
+| Conditional component skips | None at the default limits; at reduced limits exactly the skips listed in the matrix above, each with its reason. Non-UTF-8-name, finite-hard-`RLIMIT_CORE` and root skips never triggered |
 | `readdir` failure on real procfs | Not reproducible unprivileged; covered by the injected-`readdir` unit test |
-| Python 3.8–3.13 | Claimed compatible (`from __future__ import annotations` added); only 3.14 run |
+| Python other than 3.14, CMake other than 4.2, nlohmann/json other than 3.11.3, GCC other than 15.2 | Not run; the README no longer presents the build files' minimum versions as supported |
+| Output to a connected reader that stops draining | Not tested; documented as blocking (caller must time out) |
+| Independent reproduction of these results | Not done: the external reviewer could not run WSL or Docker |
 | Other distributions, Clang, musl, non-WSL kernels | Not verified |
 | CI | No CI workflow in this release; nothing was run in CI |
 
@@ -186,6 +237,27 @@ enumeration-failure handling, duplicate detection through `\u` escapes,
 numeric boundaries, precedence, every output-failure case listed above, RAII
 and scope compliance. This review was performed by an AI agent; no human
 review has taken place.
+
+## Second review (external, static)
+
+A second reviewer, outside the development session, read the source, tests,
+build files, documentation and history but could not execute Linux builds
+(WSL access denied, Docker engine unavailable); it syntax-checked the Python
+files and reproduced the launcher limit problem with mocked limits. It found
+no new false pass in the inspection core. Its items and their resolution:
+
+| # | Finding | Resolution | Evidence |
+|---|---|---|---|
+| 1 | `verify.sh` could pass without tests (stale cache), normal build not forced unsanitized | Options forced, registration checked, `--no-tests=error` (`6c4993b`) | Poisoned-cache comparison above |
+| 2 | 60 000-byte pipe test assumed pipe capacity; no unit-test timeouts | Concurrent reader, 1 MiB write, cleanup cannot deadlock; 30 s CTest timeout (`6c4993b`) | Unit suite passes in both builds |
+| 3 | Launcher required 1 564 descriptors even without fixtures; unit test checked the hard instead of the soft limit | Staging only when needed, above targets, within limits; soft limit raised and restored (`6c4993b`). Matrix run also found `test_nofile_mismatch` exceeding a 128 hard limit — fixed | Old suite: 90 failures at 1024:1024; new: none at any limit |
+| 4 | README promised an unchanged report file on write failure, but the file is opened `O_TRUNC` | Claim narrowed to open failure; partial/empty file documented (`c4c425a`) | — |
+| 5 | FR-12 "never blocks" unsupported | Blocking/backpressure documented; caller timeouts required (`c4c425a`) | — |
+| 6 | Three exact-inventory tests unmarked | Marked `exact_fds` after an audit of all tests (`6c4993b`) | ASan split 81 + 15 |
+| 7 | "State when `main()` began" and "never both, never neither" overstated | Reworded to sequential initial collection; `Observed<T>` comment corrected (`c4c425a`) | — |
+| 8 | Reproduce from a clean environment, exercise low limits | Clean-clone run and limit matrix above | Same environment as before — a second Linux environment was not available |
+| 9 | Essay presented the agent's actions as personal experience; page count unverified | Essay rewritten with accurate authorship; author sections marked to write (`582ffa3`) | Rendered via Edge headless, A4, 11 pt Times, 2.5 cm margins: 2 pages; still 2 pages with a 290-word author section |
+| 10 | No developer notes; no personal debugging rehearsal | `DEVELOPER_NOTES.md` with exercises, including one small open issue for the author (`582ffa3`) | The rehearsal itself is the author's to do |
 
 ## Traceability
 
