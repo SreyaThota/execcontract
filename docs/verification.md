@@ -344,3 +344,21 @@ progress notes and stale statements about pending Linux execution were
 updated. This update changes documentation and licensing only; the recorded
 Linux runs above preceded it. It does not claim another execution of the
 test suites or a candidate-performed rehearsal.
+
+
+## E1/E2 repeat at the published commit (2026-11-08)
+
+Run by the in-session AI coding agent on the reference WSL environment, in a
+fresh practice clone of `https://github.com/SreyaThota/execcontract` at
+`3e892a1` (the published commit), following the `DEVELOPER_NOTES.md` steps:
+
+| Step | E1: scanner descriptor exclusion | E2: raw-NUL rejection |
+|---|---|---|
+| Baseline | `ctest` 100 % of 103 | CLI exit 2; `EmbeddedNul` test passes |
+| Guard removed, rebuilt | both `scanner_contamination` tests fail (`count` 4 instead of 3 for fd 3; fd 0 `pass` instead of `fail`/`missing`) | CLI exit **0** (false pass); `EmbeddedNul` test fails |
+| Restored with `git restore`, rebuilt | 2 passed | CLI exit 2; test passes |
+
+This matches the earlier agent run against `2d51573`. A separate attempt by
+an external AI reviewer at `3e892a1` (2026-11-07) was blocked by its sandbox
+(`Wsl/E_ACCESSDENIED`, Docker API denied) and ran no tests. None of these runs
+is the author's own rehearsal.

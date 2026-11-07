@@ -10,7 +10,7 @@ Evidence (commands, outputs, counts) is in `docs/verification.md`.
 | 2 Core behaviour | done | Written before the toolchain existed, then verified in one pass: 93 unit tests green on first build after fixing test-only warnings. |
 | 3 Component hardening | done | 85 → 96 pytest tests; mutation check 9/10 → 10/10; ASan contaminates `RLIMIT_CORE` (configured with `disable_coredump=0`). |
 | 4 Completion | done | Docs, essay, verification record, independent AI review (F1–F9 fixed or documented), clean-clone README check. |
-| 5 Second review | done (author steps open) | External static review: verify.sh could pass without tests, launcher/limit and pipe-capacity assumptions, overstated guarantees, essay authorship. All fixed or narrowed; suite now run under nofile limits down to 128:128. The assisted essay is complete; personal DEVELOPER_NOTES rehearsal remains unreported. |
+| 5 Second review | engineering fixes complete | External static review: verify.sh could pass without tests, launcher/limit and pipe-capacity assumptions, overstated guarantees, essay authorship. All fixed or narrowed; suite now run under nofile limits down to 128:128. The assisted essay is complete; E1/E2 were reproduced by the coding agent, without a claim of author execution. |
 
 ## Decisions taken during the work
 
@@ -24,10 +24,13 @@ Evidence (commands, outputs, counts) is in `docs/verification.md`.
 
 ## Submission status and remaining work
 
-* Candidate's personal E1/E2 rehearsal and review of the assisted reflection
-  remain unreported. The essay accurately attributes agent-performed work.
+* E1/E2 have been reproduced by the coding agent twice (at `2d51573` and at
+  the published `3e892a1`); see `docs/verification.md`. An external
+  reviewer's attempt was sandbox-blocked and ran nothing. No author-performed
+  rehearsal is claimed.
 * E3 is fixed and agent-verified at normal and reduced descriptor limits.
 * MIT licence selected on the candidate's behalf; see `LICENSE`.
-* Nothing pushed or published; no CI.
+* Published as a public repository: https://github.com/SreyaThota/execcontract
+  (`3e892a1` and later). No CI workflow is present.
 * Roadmap hardening items (atomic report write, `O_PATH` contract open,
   fuzzing, multi-distro CI).
