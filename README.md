@@ -20,23 +20,28 @@ optional coarse type), **physical working directory**, **umask**,
 
 ## What a passing result means
 
-`passed` means: when ExecContract's `main()` started (after the dynamic loader
-and C++ runtime had initialised), the process had exactly the contracted
-descriptors and coarse types, working directory, umask and limits. It says
-nothing about the real service's behaviour after startup, and checking
-`RLIMIT_CORE` does not establish the host's whole core-dump policy.
+`passed` means: during ExecContract's initial collection phase — which is the
+first thing `main()` does, after the dynamic loader and C++ runtime have
+initialised, and which reads the descriptor inventory, umask, limits and
+working directory one after another — the values observed matched the
+contract exactly. The observations are sequential, not one atomic snapshot,
+and nothing earlier than `main()` is visible. It says nothing about the real
+service's behaviour after startup, and checking `RLIMIT_CORE` does not
+establish the host's whole core-dump policy.
 
 ## Requirements
 
-* Linux ≥ 4.7 with `/proc` mounted, glibc ≥ 2.32.
-* To build: a C++17 compiler, CMake ≥ 3.20, nlohmann/json ≥ 3.9.
-* To test: GoogleTest, Python ≥ 3.8 with pytest (only Python 3.14 has been
-  verified).
+* Linux with `/proc` mounted. The code relies on the `Umask:` field of
+  `/proc/self/status` (added in Linux 4.7) and on `strerrorname_np` (glibc
+  2.32).
+* To build: a C++17 compiler, CMake, nlohmann/json. To test: GoogleTest,
+  Python 3 with pytest.
 
-Verified on Ubuntu 26.04 (WSL2) with GCC 15.2, CMake 4.2, GoogleTest 1.17,
-nlohmann/json 3.11.3, Python 3.14, pytest 9.0 — see
-[docs/verification.md](docs/verification.md). Other distributions are expected
-to work but have not been verified.
+**Only one configuration has been verified:** Ubuntu 26.04 (WSL2) with GCC
+15.2, CMake 4.2, GoogleTest 1.17, nlohmann/json 3.11.3, Python 3.14 and
+pytest 9.0 — see [docs/verification.md](docs/verification.md). The minimum
+versions in `CMakeLists.txt` (CMake 3.20, nlohmann/json 3.9, Python 3.8) are
+what the build files request, not versions that have been tested.
 
 ## Install dependencies, build, test
 
@@ -71,9 +76,16 @@ execcontract --help | --version
 * The report goes to **stdout**, or to the `--report` file (created or
   truncated) if given — useful when the launcher under test redirects stdout
   to `/dev/null`. `--report` must not name the contract file (exit 2). If the
-  report file cannot be written, a file already at that path is left as it
-  was — **always check the exit status**, not only the file.
+  report file cannot be *opened*, a file already at that path is left as it
+  was; if it is opened (and therefore truncated) but writing fails, it may be
+  left empty or partial. In both cases the exit status is 3 — **always check
+  the exit status**, not only the file.
 * A one-line human summary goes to **stderr**.
+* Output uses ordinary blocking writes. If a reader of stdout, stderr or the
+  `--report` target is connected but stops reading, ExecContract waits for it
+  (backpressure) and does not time out by itself; run it under a timeout in
+  automation (the component tests use a 20 s subprocess timeout). Opening a
+  FIFO that has no reader at all fails immediately with exit 3.
 * `PATH` is opened relative to the working directory ExecContract was started
   in; prefer absolute paths. The contract cannot be read from stdin (fd 0 is
   one of the inspected descriptors).
@@ -253,6 +265,7 @@ descriptor, contract and report handles) as a first-class correctness issue.
 | [docs/verification.md](docs/verification.md) | Evidence: environment, commands, results, traceability |
 | [docs/essay.md](docs/essay.md) | Technical reflection |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, structure, tests, conventions |
+| [DEVELOPER_NOTES.md](DEVELOPER_NOTES.md) | Guided code walkthrough, ownership, APIs, precedence, rehearsal exercises |
 | [ROADMAP.md](ROADMAP.md) | Exclusions, limitations, future work |
 
 ## Licence and third-party code

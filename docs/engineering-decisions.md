@@ -3,8 +3,9 @@
 Each entry: decision — alternative considered — reason — accepted trade-off.
 
 **D1. C++17, not C++20.** Alternative: C++20 (`std::span`, `starts_with`,
-designated initialisers). Nothing in the design needs C++20; C++17 builds on
-GCC ≥ 9 / older LTS images that automotive and embedded CI often still use.
+designated initialisers). Nothing in the design needs C++20, and C++17 is
+supported by older compilers still common in embedded/automotive CI images —
+a rationale, not a tested claim: only GCC 15.2 has actually built this code.
 Trade-off: a few lines that C++20 would make shorter.
 
 **D2. CMake + system packages via `find_package`, no `FetchContent`.**

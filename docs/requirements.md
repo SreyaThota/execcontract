@@ -34,10 +34,13 @@ extensions are recorded in [ROADMAP.md](../ROADMAP.md).
 
 ### What a passing result proves
 
-A `passed` report proves that **at the moment ExecContract's `main()` began
-executing** (after the dynamic loader and C++ runtime initialised) the process
-had exactly the contracted descriptors with the contracted coarse types, the
-contracted physical working directory, umask and limits. It does not prove the
+A `passed` report proves that **the values observed during ExecContract's
+initial collection phase** matched the contract: the contracted descriptors
+with the contracted coarse types, physical working directory, umask and
+limits. Collection is the first thing `main()` does (after the dynamic loader
+and C++ runtime have initialised) and reads the five areas sequentially —
+descriptor inventory, umask, limits, working directory — so the result is a
+sequence of early observations, not an atomic snapshot. It does not prove the
 state at the instant of `execve`, it does not prove anything about the real
 service's behaviour after startup, and it does not prove the host's complete
 core-dump policy (`core_pattern`, `PR_SET_DUMPABLE`, systemd-coredump).
@@ -77,8 +80,15 @@ execcontract --version
   snapshot and nothing is written to stdout. This is useful when the launcher
   under test redirects stdout to `/dev/null`. A FIFO without a reader fails
   with `ENXIO` (exit 3) instead of blocking. If the report file cannot be
-  opened, an existing file at that path is left unchanged and may be stale:
-  callers must always check the exit status.
+  opened, an existing file at that path is left unchanged and may be stale; if
+  it was opened (`O_TRUNC`) but a later write or `close` fails, it may be
+  empty or partial. Either way the exit status is 3: callers must always check
+  the exit status, not only the file.
+* All output (stdout, stderr, report file) uses blocking writes. A connected
+  reader that stops draining makes ExecContract wait indefinitely
+  (backpressure); bounding the run time is the caller's responsibility, e.g.
+  with a subprocess timeout. This is a deliberate simplicity trade-off, not a
+  bounded-delivery guarantee.
 * `--report` naming the contract file (same device and inode, symlinks
   followed) is a usage error (exit 2, stderr only): truncating it would
   destroy the contract.
@@ -221,7 +231,7 @@ delivered cannot carry its own error). Known violations remain listed in an
 | FR-9 | Soft/hard limits via `getrlimit` for `RLIMIT_NOFILE` and `RLIMIT_CORE`, `"unlimited"` for `RLIM_INFINITY`, independent soft/hard checks. | Unit (`Rlimit.*`, `EvaluateRlimit.*`), component (`test_rlimits.py`) |
 | FR-10 | Report per §6 with stable ids, deterministic order, explicit `null` for unavailable observations. | Unit (`Report.*`, `Evaluate.AreaOrderIsFixed`), component (`test_reporting.py`) |
 | FR-11 | Outcomes, exit codes and precedence per §7. | Unit (`Aggregate.*`), component (all) |
-| FR-12 | Output failure (closed stdout, `ENOSPC`, broken pipe, unopenable `--report`, FIFO without reader) never exits 0 and never blocks; `SIGPIPE` does not kill the process silently; `--report` cannot overwrite the contract. | Unit (`WriteAll.*`), component (`test_reporting.py::test_stdout_*`, `test_broken_pipe_*`, `test_report_file_failure_*`, `test_report_to_fifo_*`, `test_report_path_equal_to_contract_is_refused`) |
+| FR-12 | Output failure (closed stdout, `ENOSPC`, broken pipe, unopenable `--report`, FIFO without reader) never exits 0; opening a FIFO without a reader does not block; `SIGPIPE` does not kill the process silently; `--report` cannot overwrite the contract. Writes to a connected but non-draining reader block (documented in §4; not a failure mode the tool bounds). | Unit (`WriteAll.*`), component (`test_reporting.py::test_stdout_*`, `test_broken_pipe_*`, `test_report_file_failure_*`, `test_report_to_fifo_*`, `test_report_path_equal_to_contract_is_refused`) |
 | FR-13 | Observation order: the descriptor inventory is taken before ExecContract opens any descriptor of its own; contract and report are opened afterwards. | Code review (`src/main.cpp`), component (`test_fds.py::test_scanner_contamination_fd3`) |
 | FR-14 | A runnable demonstration: one contract fails under a defective launcher and passes under the corrected launcher. | Component (`test_demo.py`), manual (`examples/demo/run-demo.sh`) |
 

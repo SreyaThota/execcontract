@@ -49,7 +49,11 @@ struct Limits {
     LimitValue hard;
 };
 
-// Either a value or an error, never both, never neither.
+// The result of one observation. The collectors only create instances through
+// ok() / fail(), which set exactly one member. The members are public, though,
+// so the type itself does not enforce that: a default-constructed Observed
+// holds neither. Consumers must treat "no value" as unknown regardless of
+// `error` (evaluate.cpp fails closed with `observation_missing`).
 template <class T>
 struct Observed {
     std::optional<T> value;

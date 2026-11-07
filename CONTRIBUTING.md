@@ -39,6 +39,19 @@ build, formatting):
 scripts/verify.sh            # build trees under ./build-verify
 ```
 
+`verify.sh` sets every test-relevant CMake option explicitly (so a stale
+cache cannot disable tests or leave sanitizers on in the normal build), fails
+if no unit tests or no component entry are registered, and runs `ctest` with
+`--no-tests=error`. Unit tests have a 30 s per-test CTest timeout and every
+component subprocess a 20 s timeout, so a hang fails instead of stalling.
+
+Also run the suite under a restrictive descriptor limit before changing test
+fixtures; tests must pass or skip with a stated reason, never fail:
+
+```bash
+prlimit --nofile=128:128 -- ctest --test-dir build --output-on-failure
+```
+
 CMake options: `EXECCONTRACT_WERROR` (warnings as errors),
 `EXECCONTRACT_SANITIZE` (ASan + UBSan for everything; component tests marked
 `exact_fds` are deselected and `ASAN_OPTIONS=disable_coredump=0` is set),
@@ -99,8 +112,12 @@ Read [docs/architecture.md](docs/architecture.md) before changing
 * Assert on stable fields, not on diagnostic text.
 * A test that asserts the exact descriptor inventory must be marked
   `@pytest.mark.exact_fds`.
-* A skip needs a specific reason in the message (e.g. "hard RLIMIT_NOFILE
-  < 600"). Do not skip or loosen a failing assertion to make a run green —
+* Choose limit and descriptor values from the limits the test process
+  actually inherited (both soft and hard); never assume a generous developer
+  machine. A skip needs a specific reason in the message (e.g. "hard
+  RLIMIT_NOFILE < 600").
+* Never rely on pipe capacity (`pipe(7)` guarantees none): drain pipes
+  concurrently in tests that write more than a few bytes. Do not skip or loosen a failing assertion to make a run green —
   investigate it.
 * For a bug fix, first add a test that fails without the fix.
 
