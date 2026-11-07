@@ -69,6 +69,7 @@ if(EXECCONTRACT_BUILD_TESTS)
     tests/unit/test_model.cpp
     tests/unit/test_observe.cpp
     tests/unit/test_report.cpp
+    tests/unit/test_robustness.cpp
     tests/unit/test_sys.cpp)
   target_link_libraries(execcontract_unit_tests PRIVATE execcontract_core GTest::gtest_main)
   target_compile_options(execcontract_unit_tests PRIVATE ${EXECCONTRACT_TEST_WARNINGS})

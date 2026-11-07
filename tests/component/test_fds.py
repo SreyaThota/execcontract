@@ -1,5 +1,7 @@
 """Descriptor inventory, policy and type checks against the real binary."""
 
+import fcntl
+import os
 import resource
 
 import pytest
@@ -174,3 +176,42 @@ def test_inventory_beyond_cap_is_inspection_error(run_probe):
     assert inv["observed"]["complete"] is False
     assert r.report["outcome"] == "inspection_failed"
     assert r.code == 3
+
+
+def test_inherited_descriptors_are_not_read_moved_or_modified(run_probe, tmp_path):
+    """Borrowed descriptors are only enumerated and fstat()ed (NFR-6).
+
+    The test keeps its own copy of each descriptor it hands down. The copies
+    share the open file description with the probe's, so a read, seek or
+    fcntl(F_SETFL) by the probe would be visible here afterwards.
+    """
+    data = tmp_path / "data.bin"
+    data.write_bytes(b"0123456789")
+    file_fd = os.open(data, os.O_RDWR | os.O_APPEND)
+    os.lseek(file_fd, 4, os.SEEK_SET)
+    pipe_r, pipe_w = os.pipe()
+    os.write(pipe_w, b"pipe-data")
+    stdin_r, stdin_w = os.pipe()
+    os.write(stdin_w, b"stdin-data")
+    os.close(stdin_w)
+    flags = {fd: fcntl.fcntl(fd, fcntl.F_GETFL) for fd in (file_fd, pipe_r, stdin_r)}
+    try:
+        # No fds area in the contract: the probe still enumerates and
+        # classifies every inherited descriptor during collection.
+        r = run_probe(
+            {"version": 1, "umask": "0022"},
+            launch={"umask": 0o022},
+            stdin=stdin_r,
+            pass_fds=(file_fd, pipe_r),
+        )
+        assert r.code == 0, r.stdout
+        assert os.lseek(file_fd, 0, os.SEEK_CUR) == 4  # offset not moved
+        for fd, before in flags.items():
+            assert fcntl.fcntl(fd, fcntl.F_GETFL) == before  # status flags not changed
+        os.set_blocking(pipe_r, False)
+        os.set_blocking(stdin_r, False)
+        assert os.read(pipe_r, 100) == b"pipe-data"  # nothing consumed
+        assert os.read(stdin_r, 100) == b"stdin-data"
+    finally:
+        for fd in (file_fd, pipe_r, pipe_w, stdin_r):
+            os.close(fd)

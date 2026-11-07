@@ -99,9 +99,13 @@ def run_probe(binary, tmp_path):
     contract: dict/str/bytes written to a file, or a Path used as-is.
     launch:   launcher spec fields (fds, close, cwd, umask, rlimits, ...).
     args:     replaces the default ["--contract", <path>] arguments.
+    pass_fds: descriptors of the test process to hand down unchanged. The
+              test keeps its own copy, which shares the open file description
+              with the probe's, so offsets, flags and unread data can be
+              checked after the probe has exited.
     """
 
-    def run(contract=None, *, launch=None, args=None, extra_args=(), stdin=subprocess.DEVNULL):
+    def run(contract=None, *, launch=None, args=None, extra_args=(), stdin=subprocess.DEVNULL, pass_fds=()):
         if args is None:
             path = contract if isinstance(contract, Path) else write_contract(tmp_path, contract)
             args = ["--contract", str(path), *extra_args]
@@ -114,6 +118,7 @@ def run_probe(binary, tmp_path):
             stderr=subprocess.PIPE,
             timeout=TIMEOUT,
             close_fds=True,
+            pass_fds=tuple(pass_fds),
             check=False,
         )
         stdout = proc.stdout.decode("utf-8")

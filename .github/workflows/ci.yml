@@ -1,0 +1,53 @@
+name: CI
+
+# Second, independent build environment: Ubuntu 24.04 (GCC 13, CMake 3.28,
+# GoogleTest 1.14, Python 3.12) runs the same scripts/verify.sh as the
+# reference WSL environment, plus the suite under a restrictive descriptor
+# limit.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        # clang-format is deliberately not installed: its output differs
+        # between major versions, so the formatting check runs only in the
+        # reference environment (verify.sh reports it as NOT RUN here).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build python3-pytest \
+            libgtest-dev libgmock-dev nlohmann-json3-dev
+
+      - name: Allow ASan to start on this runner kernel
+        # High mmap randomisation on recent runner kernels breaks the GCC 13
+        # AddressSanitizer runtime at startup; 28 bits is the classic value.
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+
+      - name: Environment
+        run: |
+          uname -a
+          ulimit -Sn; ulimit -Hn; ulimit -Sc; ulimit -Hc; umask
+
+      - name: Verify (normal + ASan/UBSan builds, unit + component tests)
+        run: scripts/verify.sh "$RUNNER_TEMP/verify"
+
+      - name: Component tests under RLIMIT_NOFILE 1024:1024 and 128:128
+        run: |
+          for limit in 1024:1024 128:128; do
+            echo "== nofile $limit"
+            prlimit --nofile=$limit -- \
+              ctest --test-dir "$RUNNER_TEMP/verify/normal" --output-on-failure --no-tests=error
+          done
