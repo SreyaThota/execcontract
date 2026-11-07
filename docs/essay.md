@@ -1,116 +1,104 @@
 # ExecContract — a short technical reflection
 
+## How this project was produced
+
+ExecContract was built with an AI coding agent (Claude Code) working from a
+detailed written brief: the five inspection areas, the exit-code contract,
+the descriptor-contamination regression and the required test matrix were
+fixed in that brief before any code existed. The agent wrote the
+implementation, the tests and the documentation, ran the builds and tests in
+WSL, and recorded the evidence in `docs/verification.md`. Two further AI
+reviews — one inside the development session, one external — attacked the
+result and found real defects, all fixed with regression tests. The
+reflection at the end of this essay is the author's own.
+
+> **[Author — before submitting, state in one or two sentences what you
+> personally did: e.g. which decisions in the brief were yours, what you
+> reviewed, reproduced or changed yourself. Keep it accurate.]**
+
 ## The project and why this scope
 
-A service behaves differently when it is started by hand, by a shell wrapper,
-by systemd or by a test harness, because each launcher hands it a slightly
-different process: leaked descriptors, a different working directory or
-umask, different resource limits. These bugs are invisible from inside a
-healthy-looking service and tend to surface late. ExecContract is a small
-native probe that a launcher integration test starts *instead of* the service.
-It inspects its own execution context in five areas — open descriptors,
-physical working directory, umask, `RLIMIT_NOFILE`, `RLIMIT_CORE` — compares
-them with a versioned JSON contract, and returns a report and an exit code a
-test can assert on.
-
-I chose this problem because it sits where the role I am applying for sits:
-automated testing, finding issues before production, and tools that plug into
-automation. I chose the scope by asking what a launcher test most often gets
-wrong and what can be observed *without changing the thing observed*. That
-excluded a supervisor, inspecting other processes, environment variables and
-signal state (all candidates in the roadmap), and left five areas that I could
-specify exactly and test from the outside. Existing tools such as `procenv`
-dump far more information; ExecContract's contribution is narrower: a strict
-contract, a verdict with stable identifiers, and explicit failure semantics.
+A service behaves differently when started by hand, by a shell wrapper, by
+systemd or by a test harness, because each launcher hands it a slightly
+different process: leaked descriptors, another working directory or umask,
+different resource limits. ExecContract is a small native probe that a
+launcher integration test starts *instead of* the service. It inspects its
+own execution context in five areas — open descriptors, physical working
+directory, umask, `RLIMIT_NOFILE`, `RLIMIT_CORE` — compares them with a
+versioned JSON contract, and returns a report and an exit code a test can
+assert on. The scope was chosen by asking which launcher mistakes are common
+and which properties can be observed *without changing them*; environment
+variables, signal state and supervision were deferred to the roadmap. Tools
+such as `procenv` dump far more; ExecContract's contribution is narrower: a
+strict contract, stable identifiers, and explicit failure semantics.
 
 ## Organisation, testing and documentation
 
-The code is a static library plus a thin `main()`. Collection
-(`observe.cpp`) is the only module that talks to the kernel about process
-state; contract handling, evaluation and reporting are pure functions over
-plain value types; `main.cpp` only orchestrates and delivers the report. That
-split decided the test strategy. GoogleTest unit tests (102) cover validation,
-evaluation, precedence and rendering directly, plus the collectors through two
-narrow seams that are just parameters — the directory to enumerate and the
-status file to parse — so cap boundaries and malformed procfs content are
-tested with real files instead of mocks.
+The code is a static library plus a thin `main()`. Only the collection module
+talks to the kernel about process state; contract validation, evaluation and
+rendering are pure functions over plain value types. That split decided the
+test strategy: 102 GoogleTest unit tests cover validation, evaluation,
+precedence and rendering directly, and the collectors through narrow seams
+that are plain parameters (the directory to enumerate, the status file to
+parse, and one injectable `readdir` for a failure procfs cannot produce
+unprivileged).
 
-The Python component tests (96) always run the compiled binary. The hard part
-was controlling the launch context without disturbing pytest itself: a tiny
-launcher script runs as a fresh `python -I` process, installs exactly the
-descriptors, working directory, umask and limits a test asks for, restores the
-default SIGPIPE disposition, and `exec`s the probe. Python's non-inheritable
-descriptors (PEP 446) make the inventory exact, and nothing in pytest's own
-process is changed. These tests cover the behavioural matrix, including the
-case I considered most important: if fd 3 is required but absent,
+The 96 pytest component tests always run the compiled binary. A small
+launcher runs as a fresh `python -I` process, installs exactly the
+descriptors, directory, umask and limits a test asks for, restores the
+default SIGPIPE disposition and `exec`s the probe, so pytest's own process is
+never changed. The key regression: if fd 3 is required but absent,
 `opendir("/proc/self/fd")` itself becomes fd 3. The report exposes the
-scanner's own descriptor number, so the test can prove that the dangerous
-situation actually occurred and that fd 3 is still reported missing.
-
-Passing tests prove little if they cannot fail, so I ran a small mutation
-check: ten realistic defects injected one at a time. Nine were caught at
-first. The survivor — treating a `readdir` error as end-of-directory — cannot
-be provoked unprivileged on procfs, so I added the one dependency-injection
-seam in the project, a defaulted `readdir` function pointer, and the mutant
-is now caught at unit level. The
-documentation follows the audience: README for users, CONTRIBUTING for
-contributors (including the rules that protect correctness), requirements with
-identifiers and a traceability table, and a verification record that lists
-commands and results, including what was not verified.
+scanner's descriptor number, so the test proves the dangerous situation
+occurred and fd 3 is still reported missing. A mutation check (ten injected
+defects, all caught) and a run of the whole suite under descriptor limits
+from 10240 down to 128 check that the tests can fail and that they do not
+depend on a generous development machine.
 
 ## Technical decisions and trade-offs
 
-*C++17* rather than C++20: nothing needed the newer standard, and older
-toolchains remain common in embedded and automotive CI. *CMake with
-`find_package` only*: builds work offline once three distro packages are
-installed, which I checked in a network-less namespace. *nlohmann/json* for
-parsing rather than a hand-written parser, with a small application-specific
-validator on top; its one surprising behaviour — silently keeping the last
-duplicated key — is caught in the parser callback. *GoogleTest* because it is
-the common choice in C++ industry code and integrates with CTest.
+C++17 rather than C++20, because nothing needed the newer standard. CMake
+with `find_package` only, so builds work offline once three distro packages
+are installed. nlohmann/json for parsing, with a small application-specific
+validator — its quiet behaviours (keeping the last duplicate key, treating a
+NUL byte as end of input) had to be countered explicitly. GoogleTest because
+it is the common industry choice and integrates with CTest.
 
-The design decisions I would defend most are about honesty of the verdict.
-The descriptor policy is a closed allowlist with no special cases, because
-leaks are the defect class the tool exists for. A check is `fail` only when
-the value is known and wrong, and `error` when it is unknown; an error
-outranks violations in the outcome but never hides them, and an unavailable
-value is never encoded as `0`, `[]` or `"unlimited"`. Types come from `fstat`
-on the descriptor, not from procfs link text. The umask is read from
-`/proc/self/status`, because `umask(2)` can only read by writing. The report
-write, the final `close` and SIGPIPE are all handled, because a report that
-silently failed to arrive must never look like success.
+The decisions that matter most concern the honesty of the verdict. The
+descriptor policy is a closed allowlist with no special cases. `fail` means
+known and wrong, `error` means unknown; an error outranks violations but never
+hides them, and an unavailable value is never encoded as `0`, `[]` or
+`"unlimited"`. Types come from `fstat` on the descriptor, not procfs link
+text; the umask is read from `/proc/self/status` because `umask(2)` can only
+read by writing. Output failures never yield exit 0. Output is deliberately
+*not* bounded in time: a reader that stops draining blocks the probe, and the
+caller's timeout is the documented safeguard.
 
-## What I found and what I would change
+## What was found during development
 
-Three things surprised me. First, the AddressSanitizer runtime lowers
-`RLIMIT_CORE` before `main()` runs, so the sanitizer build initially failed
-the core-limit tests; the probe was right and the instrumentation was
-contaminating the observation. The fix was to configure the runtime
-(`disable_coredump=0`) rather than skip tests, and to document it. Second, the
-demonstration revealed a genuine leak on my own machine: processes started
-through `wsl.exe` inherit descriptor 7, an `O_RDWR` handle to `/dev/ptmx`
-without close-on-exec. That is exactly the kind of defect ExecContract is
-for, found by accident. Third, `clang-tidy` pointed at an unchecked
-invariant: evaluation assumed every observation held either a value or an
-error. A default-constructed one would have been undefined behaviour; it now
-fails closed.
+- The ASan runtime lowers `RLIMIT_CORE` before `main()`, so the sanitizer
+  build first failed the core-limit tests — instrumentation contaminating the
+  observation. Fixed by configuring the runtime, not by skipping tests.
+- The demo exposed a real leak: processes started through `wsl.exe` inherit
+  fd 7, an `O_RDWR` `/dev/ptmx` handle without close-on-exec.
+- A reviewer found a false pass: a NUL byte made the JSON parser stop, so
+  `{weak}\0{strict}` passed. Numbers beyond double range and invalid UTF-8
+  also escaped the input-error path.
+- Following the README in a clean clone broke the demo with a relative path.
+- The second review showed that the verification script itself could report
+  success with zero tests from a stale build cache, and that the test
+  launcher demanded 1 564 descriptors, so 90 of 96 tests failed under a
+  1024/1024 limit before the probe even ran.
 
-The most instructive defect came from the independent review: a NUL byte in
-the contract made the JSON library stop reading, so a weak contract followed
-by `\0` and a stricter one *passed*. Every test was green because none of
-them contained a raw NUL — exactly the kind of false pass the project exists
-to prevent, and a reminder that a validator inherits its parser's notion of
-"end of input". The same review found that numbers beyond double range and
-invalid UTF-8 escaped the input-error path. Separately, following my own
-README in a clean clone showed that the demo script broke with a relative
-binary path. Each fix landed with a test that fails on the old binary.
+Each fix landed with a test that fails on the previous version. The common
+lesson is that the test infrastructure needs the same scepticism as the
+product.
 
-With hindsight I would change the order of work. The development machine had
-no compiler for the first part of the project, so specification, code and
-tests were written before anything could be built, and then verified in one
-pass. The code held up, but the commit history is coarser than I would like —
-one specification commit and one implementation commit — because I did not
-want to fabricate intermediate states that were never verified. I would also
-fuzz the contract parser from the start (it would likely have found the NUL
-case), write the report atomically via a temporary file, and add a CI
-workflow across distributions and compilers. The scope itself I would keep.
+## Reflection
+
+> **[Author — write this section yourself, roughly 150–250 words. Prompts:
+> Which design decision would you defend most, and why? Which finding above
+> did you reproduce or understand only after working through it yourself?
+> What would you do differently if you started again (e.g. how the work was
+> split between you and the assistant, fuzzing the parser earlier, CI)? Do
+> not describe actions you did not take.]**
