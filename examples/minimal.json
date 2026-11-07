@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "fds": {
+    "required": [{"fd": 0}, {"fd": 1}, {"fd": 2}]
+  },
+  "umask": "0022"
+}
