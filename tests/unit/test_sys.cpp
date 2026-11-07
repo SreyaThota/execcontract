@@ -7,6 +7,8 @@
 
 #include <gtest/gtest.h>
 
+#include <thread>
+
 using namespace execcontract;
 
 TEST(UniqueFd, OwnsAndClosesOnce) {
@@ -83,14 +85,31 @@ TEST(WriteAll, ClosedDescriptorReportsEbadf) {
     EXPECT_EQ(write_all(raw, "x"), EBADF);
 }
 
-TEST(WriteAll, LargeWriteThroughPipeIsComplete) {
+TEST(WriteAll, LargeWriteThroughPipeIsCompleteWithConcurrentReader) {
+    // Pipe capacity is not guaranteed (pipe(7)), so the test must not rely on
+    // the data fitting. 1 MiB exceeds any default capacity and forces many
+    // partial writes while a reader drains concurrently.
+    struct sigaction ign{}, old{};
+    ign.sa_handler = SIG_IGN;
+    ASSERT_EQ(::sigaction(SIGPIPE, &ign, &old), 0);  // a dead reader -> EPIPE, not a killed test
     int p[2];
     ASSERT_EQ(::pipe2(p, O_CLOEXEC), 0);
     UniqueFd r(p[0]), w(p[1]);
-    // Larger than a default pipe buffer would need a reader; stay below 64 KiB.
-    const std::string data(60000, 'z');
-    ASSERT_EQ(write_all(w.get(), data), 0);
-    w.reset();
-    const ReadResult got = read_bounded(r.get(), 100000);
-    EXPECT_EQ(got.data, data);
+    const std::string data(std::size_t{1} << 20, 'z');
+
+    ReadResult got;
+    std::thread reader([&] {
+        got = read_bounded(r.get(), data.size() + 1);
+        r.reset();  // if the reader stops early, the writer fails instead of blocking
+    });
+    const int err = write_all(w.get(), data);
+    w.reset();  // EOF for the reader, on success and on failure
+    reader.join();
+    ASSERT_EQ(::sigaction(SIGPIPE, &old, nullptr), 0);
+
+    EXPECT_EQ(err, 0);
+    EXPECT_EQ(got.err, 0);
+    EXPECT_FALSE(got.too_large);
+    EXPECT_EQ(got.data.size(), data.size());
+    EXPECT_TRUE(got.data == data);  // avoid printing 1 MiB on failure
 }

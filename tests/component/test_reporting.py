@@ -86,6 +86,7 @@ def test_broken_pipe_exits_3_not_sigpipe(run_probe):
     assert "report delivery failed" in r.stderr
 
 
+@pytest.mark.exact_fds
 def test_report_file_when_stdout_is_dev_null(run_probe, tmp_path):
     out = tmp_path / "report.json"
     r = run_probe(

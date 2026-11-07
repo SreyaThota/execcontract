@@ -27,6 +27,7 @@ installed here with ``inheritable=True`` and 0-2 survive ``execv``. Exit 97
 means the spec could not be applied; the probe never ran.
 """
 
+import fcntl
 import json
 import os
 import resource
@@ -34,7 +35,6 @@ import signal
 import socket
 import sys
 
-STAGE_BASE = 1500
 RESOURCES = {"nofile": resource.RLIMIT_NOFILE, "core": resource.RLIMIT_CORE}
 
 
@@ -44,6 +44,18 @@ def die(msg):
     except OSError:
         pass
     os._exit(97)
+
+
+def ensure_soft_nofile(needed):
+    """Raise the soft RLIMIT_NOFILE to `needed` if it is lower and the hard
+    limit allows it (the original limits are restored before exec)."""
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    inf = resource.RLIM_INFINITY
+    if soft == inf or soft >= needed:
+        return
+    if hard != inf and hard < needed:
+        die(f"RLIMIT_NOFILE hard limit {hard} is below the {needed} descriptor numbers this fixture needs")
+    resource.setrlimit(resource.RLIMIT_NOFILE, (needed, hard))
 
 
 def to_rlim(value, current):
@@ -86,39 +98,37 @@ def main():
     spec = json.loads(sys.argv[1])
     argv = spec["argv"]
 
-    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-    original_nofile = (soft, hard)
-    wanted_stage = STAGE_BASE + 64
-    if soft != resource.RLIM_INFINITY and soft < wanted_stage:
-        if hard != resource.RLIM_INFINITY and hard < wanted_stage:
-            die("hard RLIMIT_NOFILE too low for staging")
-        resource.setrlimit(resource.RLIMIT_NOFILE, (wanted_stage, hard))
+    original_nofile = resource.getrlimit(resource.RLIMIT_NOFILE)
+    fd_specs = spec.get("fds", [])
+    fill_to = spec.get("fill_to") or 0
+    targets = {s["fd"] for s in fd_specs}
 
-    # Create fixtures and move them to high, close-on-exec staging numbers so
-    # installing one target can never clobber another fixture's source.
-    keep = []
-    staged = []
-    for i, fd_spec in enumerate(spec.get("fds", [])):
-        src = make_fixture(fd_spec, keep)
-        hi = os.dup2(src, STAGE_BASE + i, inheritable=False)
-        os.close(src)
-        staged.append((fd_spec["fd"], hi))
-    for target, hi in staged:
-        os.dup2(hi, target, inheritable=True)
-    targets = {t for t, _ in staged}
-
-    fill_to = spec.get("fill_to")
-    if fill_to:
-        null = os.open(os.devnull, os.O_RDONLY)
-        null_hi = os.dup2(null, STAGE_BASE + 63, inheritable=False)
-        os.close(null)
-        for n in range(3, fill_to):
-            if n not in targets:
-                os.dup2(null_hi, n, inheritable=True)
-        os.close(null_hi)
-
-    for _, hi in staged:
-        os.close(hi)
+    # Descriptor fixtures only when requested: a spec without them changes no
+    # limits and needs no spare descriptor numbers.
+    if fd_specs or fill_to:
+        # Staging numbers sit above every target and fill number, so
+        # installing one target can never clobber another fixture's source.
+        base = max([*targets, fill_to - 1, 2]) + 1
+        ensure_soft_nofile(base + len(fd_specs) + 1)
+        keep = []
+        staged = []
+        for fd_spec in fd_specs:
+            src = make_fixture(fd_spec, keep)
+            hi = fcntl.fcntl(src, fcntl.F_DUPFD_CLOEXEC, base)  # lowest free number >= base
+            os.close(src)
+            staged.append((fd_spec["fd"], hi))
+        for target, hi in staged:
+            os.dup2(hi, target, inheritable=True)
+        if fill_to:
+            null = os.open(os.devnull, os.O_RDONLY)
+            null_hi = fcntl.fcntl(null, fcntl.F_DUPFD_CLOEXEC, base)
+            os.close(null)
+            for n in range(3, fill_to):
+                if n not in targets:
+                    os.dup2(null_hi, n, inheritable=True)
+            os.close(null_hi)
+        for _, hi in staged:
+            os.close(hi)
     for path in spec.get("unlink", []):
         os.unlink(path)
     for n in spec.get("close", []):

@@ -35,10 +35,13 @@ def test_nofile_soft_and_hard_match(run_probe):
 
 
 def test_nofile_mismatch(run_probe):
-    r = run_probe({"version": 1, "rlimit_nofile": {"soft": 512}}, launch={"rlimits": {"nofile": [256, None]}})
+    # Small values: the soft limit must stay within whatever hard limit the
+    # test runner inherited (found by running the suite under nofile 128:128).
+    soft = finite_below_hard(resource.RLIMIT_NOFILE, 64)
+    r = run_probe({"version": 1, "rlimit_nofile": {"soft": 2 * soft}}, launch={"rlimits": {"nofile": [soft, None]}})
     assert r.code == 1
     c = r.check("rlimit_nofile.soft")
-    assert (c["status"], c["expected"], c["observed"]) == ("fail", 512, 256)
+    assert (c["status"], c["expected"], c["observed"]) == ("fail", 2 * soft, soft)
 
 
 def test_soft_and_hard_are_independent(run_probe):

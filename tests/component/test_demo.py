@@ -41,12 +41,14 @@ def test_defective_launcher_violates_contract(demo, binary):
     assert not [c for c in report["checks"] if c["status"] == "error"]
 
 
+@pytest.mark.exact_fds
 def test_corrected_launcher_satisfies_contract(demo, binary):
     code, report = launch(demo, "launch-fixed.sh", binary)
     assert code == 0, json.dumps(report, indent=2)
     assert report["outcome"] == "passed"
 
 
+@pytest.mark.exact_fds
 @pytest.mark.parametrize("relative", [False, True], ids=["absolute-binary", "relative-binary"])
 def test_run_demo_script(demo, binary, relative):
     # The README runs the demo with a relative path (build/execcontract);

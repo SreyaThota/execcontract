@@ -72,7 +72,8 @@ if(EXECCONTRACT_BUILD_TESTS)
     tests/unit/test_sys.cpp)
   target_link_libraries(execcontract_unit_tests PRIVATE execcontract_core GTest::gtest_main)
   target_compile_options(execcontract_unit_tests PRIVATE ${EXECCONTRACT_TEST_WARNINGS})
-  gtest_discover_tests(execcontract_unit_tests DISCOVERY_MODE PRE_TEST PROPERTIES LABELS unit)
+  # Bounded per-test timeout: a hung unit test must fail, not stall the run.
+  gtest_discover_tests(execcontract_unit_tests DISCOVERY_MODE PRE_TEST PROPERTIES LABELS unit TIMEOUT 30)
 
   find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
   # Exact descriptor-inventory assertions are only meaningful for the normal

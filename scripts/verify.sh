@@ -2,6 +2,11 @@
 # Full local verification: normal build + all tests, sanitizer build + unit
 # and compatible component tests, formatting check. Uses only installed
 # packages (no network). Usage: scripts/verify.sh [BUILD_ROOT]
+#
+# Every option that affects what is tested is set explicitly, so a reused
+# build directory with stale cache values cannot silently disable tests or
+# leave sanitizers on in the "normal" build. The script fails if no tests, or
+# not both test kinds, are registered.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd -P)
@@ -10,26 +15,48 @@ gen=()
 command -v ninja >/dev/null 2>&1 && gen=(-G Ninja)
 
 step() { printf '\n==> %s\n' "$*"; }
+die() { printf 'verify.sh: %s\n' "$*" >&2; exit 1; }
 
-step "toolchain"
+# Number of tests registered in build dir $1 with label $2.
+count_tests() {
+    ctest --test-dir "$1" -N -L "$2" | sed -n 's/^Total Tests: *//p'
+}
+
+build_and_test() {
+    local dir=$1 label=$2
+    shift 2
+    step "$label: configure + build"
+    cmake -S "$root" -B "$dir" "${gen[@]}" -DEXECCONTRACT_BUILD_TESTS=ON -DEXECCONTRACT_WERROR=ON "$@"
+    cmake --build "$dir"
+
+    local units components
+    units=$(count_tests "$dir" unit)
+    components=$(count_tests "$dir" component)
+    [ "${units:-0}" -gt 0 ] || die "$label: no unit tests registered"
+    [ "${components:-0}" -eq 1 ] || die "$label: component test entry not registered"
+    echo "registered: $units unit test(s), $components component entry"
+
+    step "$label: tests"
+    ctest --test-dir "$dir" --output-on-failure --no-tests=error
+}
+
+step "toolchain and source"
 uname -sr
 "${CXX:-c++}" --version | head -n1
 cmake --version | head -n1
 python3 --version
 python3 -c 'import pytest; print("pytest", pytest.__version__)'
+echo "RLIMIT_NOFILE soft/hard: $(ulimit -Sn)/$(ulimit -Hn)"
+if git -C "$root" rev-parse --verify -q HEAD >/dev/null 2>&1; then
+    echo "commit: $(git -C "$root" rev-parse --short HEAD)$([ -n "$(git -C "$root" status --porcelain)" ] && echo ' (working tree modified)')"
+fi
 
-step "normal build (RelWithDebInfo, -Werror)"
-cmake -S "$root" -B "$out/normal" "${gen[@]}" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEXECCONTRACT_WERROR=ON
-cmake --build "$out/normal"
-step "normal tests: C++ unit + Python component (exact descriptor assertions included)"
-ctest --test-dir "$out/normal" --output-on-failure
+build_and_test "$out/normal" "normal build (RelWithDebInfo, no sanitizers; exact descriptor assertions included)" \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEXECCONTRACT_SANITIZE=OFF
 
-step "sanitizer build (ASan + UBSan, Debug)"
-cmake -S "$root" -B "$out/asan" "${gen[@]}" -DCMAKE_BUILD_TYPE=Debug -DEXECCONTRACT_SANITIZE=ON -DEXECCONTRACT_WERROR=ON
-cmake --build "$out/asan"
-step "sanitizer tests (component tests marked exact_fds are deselected)"
-ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
-    ctest --test-dir "$out/asan" --output-on-failure
+# The component entry sets its own ASAN_OPTIONS (see CMakeLists.txt).
+build_and_test "$out/asan" "sanitizer build (Debug, ASan + UBSan; exact_fds component tests deselected)" \
+    -DCMAKE_BUILD_TYPE=Debug -DEXECCONTRACT_SANITIZE=ON
 
 step "formatting"
 if command -v clang-format >/dev/null 2>&1; then

@@ -160,19 +160,42 @@ TEST(FdScan, ScannerTakesLowestFreeNumberButDoesNotReportIt) {
     EXPECT_FALSE(contains_fd(inv, freed));
 }
 
+namespace {
+// Restores the test process's RLIMIT_NOFILE on every exit path, including
+// failed ASSERTs. Only the soft limit is ever changed, so this always works.
+class NofileRestorer {
+   public:
+    explicit NofileRestorer(const struct rlimit& saved) : saved_(saved) {}
+    ~NofileRestorer() { (void)::setrlimit(RLIMIT_NOFILE, &saved_); }
+    NofileRestorer(const NofileRestorer&) = delete;
+    NofileRestorer& operator=(const NofileRestorer&) = delete;
+
+   private:
+    struct rlimit saved_;
+};
+}  // namespace
+
 TEST(FdScan, NotBoundedBySoftNofileLimit) {
+    constexpr rlim_t kHigh = 500;  // descriptor number to place above the lowered limit
     struct rlimit saved{};
     ASSERT_EQ(::getrlimit(RLIMIT_NOFILE, &saved), 0);
-    if (saved.rlim_max != RLIM_INFINITY && saved.rlim_max < 600) {
-        GTEST_SKIP() << "hard RLIMIT_NOFILE < 600";
+    const NofileRestorer restore(saved);
+    // Allocating fd 500 needs a *soft* limit above it; raise it if the hard
+    // limit allows, otherwise the condition cannot be constructed here.
+    if (saved.rlim_cur != RLIM_INFINITY && saved.rlim_cur <= kHigh) {
+        if (saved.rlim_max != RLIM_INFINITY && saved.rlim_max <= kHigh) {
+            GTEST_SKIP() << "hard RLIMIT_NOFILE " << saved.rlim_max << " <= " << kHigh;
+        }
+        struct rlimit raised = saved;
+        raised.rlim_cur = kHigh + 1;
+        ASSERT_EQ(::setrlimit(RLIMIT_NOFILE, &raised), 0);
     }
-    UniqueFd high(::fcntl(STDERR_FILENO, F_DUPFD_CLOEXEC, 500));
+    UniqueFd high(::fcntl(STDERR_FILENO, F_DUPFD_CLOEXEC, static_cast<int>(kHigh)));
     ASSERT_TRUE(high);
     struct rlimit lowered = saved;
     lowered.rlim_cur = 64;  // soft only; hard unchanged so it can be restored
     ASSERT_EQ(::setrlimit(RLIMIT_NOFILE, &lowered), 0);
     const FdInventory inv = scan_fd_dir("/proc/self/fd", kMaxInventoryFds);
-    ASSERT_EQ(::setrlimit(RLIMIT_NOFILE, &saved), 0);
     ASSERT_TRUE(inv.complete);
     EXPECT_TRUE(contains_fd(inv, high.get()));
 }
