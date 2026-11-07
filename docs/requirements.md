@@ -134,10 +134,10 @@ by the JSON library and therefore rejected as a type error, never coerced.
   "unchecked": ["rlimit_core"],
   "checks": [
     {"id": "fd.inventory", "status": "pass", "expected": "complete inventory",
-     "observed": {"complete": true, "count": 4, "scanner_fd": 4},
-     "diagnostic": "enumerated 4 descriptor(s) from /proc/self/fd", "error": null},
+     "observed": {"complete": true, "count": 3, "scanner_fd": 3}, "reason": null,
+     "diagnostic": "enumerated 3 descriptor(s) from /proc/self/fd", "error": null},
     {"id": "fd.3", "status": "fail", "expected": {"presence": "required", "type": null},
-     "observed": {"present": false, "type": null},
+     "observed": {"present": false, "type": null}, "reason": "missing",
      "diagnostic": "required descriptor 3 is not open", "error": null}
   ],
   "error": null
@@ -146,10 +146,28 @@ by the JSON library and therefore rejected as a type error, never coerced.
 
 * `outcome` ∈ `passed`, `violated`, `inspection_failed`, `invalid_contract`,
   `internal_error`.
-* Each check always has the keys `id`, `status` (`pass`/`fail`/`error`),
-  `expected`, `observed` (`null` when unavailable — never `0`, `[]` or
-  `"unlimited"`), `diagnostic` (human text, not stable), `error` (`null` or
+* Each check always has the keys, in this order, `id`, `status`
+  (`pass`/`fail`/`error`), `expected`, `observed` (`null` when unavailable —
+  never `0`, `[]` or `"unlimited"`), `reason` (stable violation id for `fail`:
+  `missing`, `type_mismatch`, `unexpected`, `mismatch`; otherwise `null`),
+  `diagnostic` (human text, not stable), `error` (`null` or
   `{"code": <stable id>, "errno": <int|null>, "errno_name": <"ENOENT"|null>, "message": <text>}`).
+* `fd.inventory.observed.scanner_fd` is the descriptor number the enumeration
+  stream itself occupied (and was excluded). It is reported so tests can prove
+  the contamination path was actually exercised.
+* Stable check-error codes: `fd_enumeration_failed`, `fd_entry_unparseable`,
+  `inventory_capped`, `fd_inventory_incomplete`, `fd_type_unavailable`,
+  `cwd_deleted`, `cwd_unreachable`, `cwd_unavailable`, `cwd_too_long`,
+  `cwd_not_utf8`, `umask_unavailable`, `umask_malformed`, `rlimit_unavailable`,
+  `observation_missing` (internal invariant violated; fails closed).
+* Stable contract-error codes: `contract_not_found`, `contract_unreadable`,
+  `contract_open_failed`, `contract_not_regular_file`, `contract_too_large`,
+  `contract_read_failed`, `malformed_json`, `duplicate_key`, `too_deep`,
+  `invalid_type`, `missing_version`, `unsupported_version`, `unknown_field`,
+  `empty_contract`, `empty_area`, `missing_field`, `out_of_range`,
+  `invalid_fd_type`, `duplicate_fd`, `too_many_fd_entries`, `invalid_path`,
+  `noncanonical_path`, `invalid_umask`, `contradictory_limits`;
+  internal: `serialization_failed`.
 * Check ids and order are stable: `fd.inventory`; `fd.<n>` for each contracted
   descriptor in ascending order; `fd.unexpected.<n>` in ascending order; `cwd`;
   `umask`; `rlimit_nofile.soft`; `rlimit_nofile.hard`; `rlimit_core.soft`;
@@ -184,12 +202,12 @@ delivered cannot carry its own error). Known violations remain listed in an
 | FR-4 | Descriptor inventory from `/proc/self/fd`, excluding exactly the enumeration stream's own descriptor (`dirfd`), distinguishing complete, failed and capped enumeration; not bounded by `RLIMIT_NOFILE`. | Unit (`FdScan.*`), component (`test_fds.py`) |
 | FR-5 | Descriptor policy per §3: required, permitted, unexpected, closed allowlist. | Unit (`EvaluateFds.*`), component (`test_fds.py`) |
 | FR-6 | Coarse type from `fstat` on the descriptor; never reopening targets or reading symlink text. | Unit (`FdType.*`), component (`test_fds.py::test_type_*`) |
-| FR-7 | Physical cwd via `getcwd` (not `$PWD`), exact byte comparison, canonical expected path; deleted/unreachable/too long/non-UTF-8 → inspection error with bounded diagnostic. | Unit (`Cwd.*`, `EvaluateCwd.*`), component (`test_cwd.py`) |
+| FR-7 | Physical cwd via `getcwd` (not `$PWD`), exact byte comparison, canonical expected path; deleted/unreachable/too long/non-UTF-8 → inspection error with bounded diagnostic. | Unit (`CwdTest.*`, `EvaluateCwd.*`), component (`test_cwd.py`) |
 | FR-8 | Umask from the `Umask:` field of `/proc/self/status`, never by calling `umask()` or creating files; missing/malformed → inspection error. | Unit (`Umask.*`), component (`test_umask.py`), review |
 | FR-9 | Soft/hard limits via `getrlimit` for `RLIMIT_NOFILE` and `RLIMIT_CORE`, `"unlimited"` for `RLIM_INFINITY`, independent soft/hard checks. | Unit (`Rlimit.*`, `EvaluateRlimit.*`), component (`test_rlimits.py`) |
-| FR-10 | Report per §6 with stable ids, deterministic order, explicit `null` for unavailable observations. | Unit (`Report.*`), component (`test_reporting.py`) |
+| FR-10 | Report per §6 with stable ids, deterministic order, explicit `null` for unavailable observations. | Unit (`Report.*`, `Evaluate.AreaOrderIsFixed`), component (`test_reporting.py`) |
 | FR-11 | Outcomes, exit codes and precedence per §7. | Unit (`Aggregate.*`), component (all) |
-| FR-12 | Output failure (closed stdout, `ENOSPC`, broken pipe, unopenable `--report`) never exits 0; `SIGPIPE` does not kill the process silently. | Unit (`WriteAll.*`), component (`test_reporting.py::test_output_*`) |
+| FR-12 | Output failure (closed stdout, `ENOSPC`, broken pipe, unopenable `--report`) never exits 0; `SIGPIPE` does not kill the process silently. | Unit (`WriteAll.*`), component (`test_reporting.py::test_stdout_*`, `test_broken_pipe_*`, `test_report_file_failure_*`) |
 | FR-13 | Observation order: the descriptor inventory is taken before ExecContract opens any descriptor of its own; contract and report are opened afterwards. | Code review (`src/main.cpp`), component (`test_fds.py::test_scanner_contamination_fd3`) |
 | FR-14 | A runnable demonstration: one contract fails under a defective launcher and passes under the corrected launcher. | Component (`test_demo.py`), manual (`examples/demo/run-demo.sh`) |
 
@@ -212,8 +230,13 @@ delivered cannot carry its own error). Known violations remain listed in an
 * Linux ≥ 4.7 (for the `Umask:` field of `/proc/self/status`), glibc ≥ 2.32
   (`strerrorname_np`), `/proc` mounted.
 * Reference/verified environment: see `docs/verification.md` (WSL2 Ubuntu 26.04,
-  GCC, CMake, Python 3.14). Other distributions and compilers are expected to
-  work but are unverified.
+  GCC 15.2, CMake 4.2, Python 3.14). Other distributions and compilers are
+  expected to work but are unverified.
+* Very restrictive inherited limits (e.g. `RLIMIT_NOFILE` soft limit 0–2, or
+  limits that stop the dynamic loader) can prevent ExecContract from starting
+  or from reaching its reporting code. The caller must treat a launch failure
+  or a missing/unparseable report as a failure; a JSON report cannot be
+  guaranteed in that case.
 
 ## 11. Traceability
 
