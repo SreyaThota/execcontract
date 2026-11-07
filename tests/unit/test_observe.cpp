@@ -85,6 +85,47 @@ TEST(FdScan, UnparseableEntryFailsClosed) {
     }
 }
 
+namespace {
+// readdir() wrappers for the seam: the real directory is read, but the
+// stream fails (or errno is clobbered) at a chosen point.
+int g_calls = 0;
+dirent* readdir_fails_after_three(DIR* d) {
+    if (++g_calls > 3) {
+        errno = EIO;
+        return nullptr;
+    }
+    return ::readdir(d);
+}
+dirent* readdir_clobbers_errno_on_success(DIR* d) {
+    dirent* e = ::readdir(d);
+    if (e != nullptr) {
+        errno = ENOENT;  // a successful call may leave errno modified
+    }
+    return e;
+}
+}  // namespace
+
+TEST(FdScan, ReaddirErrorMidwayIsAnErrorNotEndOfDirectory) {
+    test::TempDir dir;
+    for (int i = 100; i < 110; ++i) dir.write(std::to_string(i), "");
+    g_calls = 0;
+    const FdInventory inv = scan_fd_dir(dir.path().c_str(), kMaxInventoryFds, readdir_fails_after_three);
+    EXPECT_FALSE(inv.complete);
+    ASSERT_TRUE(inv.error);
+    EXPECT_EQ(inv.error->code, "fd_enumeration_failed");
+    EXPECT_EQ(inv.error->err, EIO);
+    EXPECT_LE(inv.entries.size(), 3u);  // partial evidence kept, never "complete"
+}
+
+TEST(FdScan, StaleErrnoAfterSuccessfulCallsIsNotMistakenForAnError) {
+    test::TempDir dir;
+    for (int i = 100; i < 105; ++i) dir.write(std::to_string(i), "");
+    const FdInventory inv =
+        scan_fd_dir(dir.path().c_str(), kMaxInventoryFds, readdir_clobbers_errno_on_success);
+    ASSERT_TRUE(inv.complete) << inv.error->code;
+    EXPECT_EQ(inv.entries.size(), 5u);
+}
+
 TEST(FdScan, MissingDirectoryIsAnErrorNotAnEmptyInventory) {
     const FdInventory inv = scan_fd_dir("/nonexistent/execcontract/fd", kMaxInventoryFds);
     EXPECT_FALSE(inv.complete);

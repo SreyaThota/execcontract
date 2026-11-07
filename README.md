@@ -30,7 +30,8 @@ nothing about the real service's behaviour after startup, and checking
 
 * Linux ≥ 4.7 with `/proc` mounted, glibc ≥ 2.32.
 * To build: a C++17 compiler, CMake ≥ 3.20, nlohmann/json ≥ 3.9.
-* To test: GoogleTest, Python ≥ 3.8 with pytest.
+* To test: GoogleTest, Python ≥ 3.8 with pytest (only Python 3.14 has been
+  verified).
 
 Verified on Ubuntu 26.04 (WSL2) with GCC 15.2, CMake 4.2, GoogleTest 1.17,
 nlohmann/json 3.11.3, Python 3.14, pytest 9.0 — see
@@ -69,7 +70,9 @@ execcontract --help | --version
 
 * The report goes to **stdout**, or to the `--report` file (created or
   truncated) if given — useful when the launcher under test redirects stdout
-  to `/dev/null`.
+  to `/dev/null`. `--report` must not name the contract file (exit 2). If the
+  report file cannot be written, a file already at that path is left as it
+  was — **always check the exit status**, not only the file.
 * A one-line human summary goes to **stderr**.
 * `PATH` is opened relative to the working directory ExecContract was started
   in; prefer absolute paths. The contract cannot be read from stdin (fd 0 is
@@ -152,8 +155,8 @@ rationale is in [docs/requirements.md](docs/requirements.md).
 
 ### Encoding
 
-Linux paths are bytes; JSON is Unicode. Contract strings must be valid UTF-8
-(enforced by the parser). If the observed working directory is not valid
+Linux paths are bytes; JSON is Unicode. The contract must be valid UTF-8
+(a leading byte-order mark is accepted; raw NUL bytes are rejected). If the observed working directory is not valid
 UTF-8, the `cwd` check is an inspection error (`cwd_not_utf8`) with a short
 diagnostic; bytes are never replaced or guessed.
 

@@ -119,6 +119,43 @@ TEST(ContractParse, MalformedJson) {
     EXPECT_EQ(error_code(R"({"version": 1, /* c */ "umask": "0022"})"), "malformed_json");
 }
 
+TEST(ContractParse, EmbeddedNulIsRejectedNotTreatedAsEndOfInput) {
+    // nlohmann's lexer would stop at the NUL and accept the weaker first part.
+    const std::string text =
+        std::string(R"({"version":1,"umask":"0022"})") + '\0' + R"({"version":1,"fds":{"required":[]}})";
+    const ContractResult r = parse_contract(text);
+    ASSERT_TRUE(r.error);
+    EXPECT_EQ(r.error->code, "malformed_json");
+    EXPECT_NE(r.error->message.find("offset 28"), std::string::npos);
+    EXPECT_EQ(error_code(std::string("\0", 1)), "malformed_json");
+}
+
+TEST(ContractParse, NumberOverflowIsInvalidInputNotAnException) {
+    EXPECT_EQ(error_code(R"({"version":1,"rlimit_core":{"soft":1e999}})"), "out_of_range");
+    EXPECT_EQ(error_code(R"({"version":1e999,"umask":"0022"})"), "out_of_range");
+    EXPECT_EQ(error_code(R"({"version":1,"fds":{"required":[{"fd":-1e400}]}})"), "out_of_range");
+}
+
+TEST(ContractParse, ErrorMessagesAreAsciiEvenForInvalidUtf8Input) {
+    for (const char* bad : {"{\"version\":1,\"cwd\":\"/\xFF\"}", "\xFF{}", "{\"\xC3\x28\":1}"}) {
+        const ContractResult r = parse_contract(bad);
+        ASSERT_TRUE(r.error) << bad;
+        EXPECT_EQ(r.error->code, "malformed_json") << bad;
+        EXPECT_FALSE(first_invalid_utf8(r.error->message)) << r.error->message;
+        for (const char c : r.error->message) {
+            EXPECT_TRUE(static_cast<unsigned char>(c) >= 0x20 && static_cast<unsigned char>(c) < 0x7f);
+        }
+    }
+}
+
+TEST(ContractParse, PointerTokensAreEscaped) {
+    EXPECT_EQ(error_pointer(with_version(R"("rlimit_core": {"a/b~c": 1})")), "/rlimit_core/a~1b~0c");
+}
+
+TEST(ContractParse, Utf8ByteOrderMarkIsAccepted) {
+    EXPECT_EQ(error_code("\xEF\xBB\xBF" + with_version(R"("umask": "0022")")), "<valid>");
+}
+
 TEST(ContractParse, TopLevelMustBeObject) {
     EXPECT_EQ(error_code("[]"), "invalid_type");
     EXPECT_EQ(error_code("1"), "invalid_type");

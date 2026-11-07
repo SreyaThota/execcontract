@@ -34,10 +34,50 @@ std::string type_name(const json& v) {
     return v.type_name();
 }
 
+// Library messages can quote the offending input bytes, which may be invalid
+// UTF-8 and would then make the strict report serialiser fail. Keep printable
+// ASCII and render everything else as \xNN.
+std::string ascii_safe(std::string_view s) {
+    static const char hex[] = "0123456789abcdef";
+    std::string out;
+    for (const char ch : s) {
+        const auto c = static_cast<unsigned char>(ch);
+        if (c >= 0x20 && c < 0x7f) {
+            out += ch;
+        } else {
+            out += "\\x";
+            out += hex[c >> 4];
+            out += hex[c & 0xf];
+        }
+    }
+    return out;
+}
+
+// RFC 6901 escaping of one reference token.
+std::string pointer_token(const std::string& key) {
+    std::string out;
+    for (const char ch : key) {
+        if (ch == '~') {
+            out += "~0";
+        } else if (ch == '/') {
+            out += "~1";
+        } else {
+            out += ch;
+        }
+    }
+    return out;
+}
+
 // Parse with duplicate-key and depth detection. nlohmann::json keeps the last
 // value of a duplicated key silently, so duplicates are caught in the parser
 // callback, which sees every key event in document order.
 json parse_strict(std::string_view text) {
+    // nlohmann's lexer treats a NUL byte as end of input, which would
+    // silently ignore everything after it. JSON text never contains a raw
+    // NUL (inside strings it must be escaped), so reject it up front.
+    if (const auto nul = text.find('\0'); nul != std::string_view::npos) {
+        fail("malformed_json", "contract contains a NUL byte at offset " + std::to_string(nul), "");
+    }
     std::vector<std::set<std::string>> keys;
     int depth = 0;
     auto callback = [&](int /*lib_depth*/, json::parse_event_t event, json& parsed) -> bool {
@@ -71,7 +111,12 @@ json parse_strict(std::string_view text) {
         return json::parse(text.begin(), text.end(), callback, /*allow_exceptions=*/true,
                            /*ignore_comments=*/false);
     } catch (const json::parse_error& e) {
-        fail("malformed_json", e.what(), "");
+        fail("malformed_json", ascii_safe(e.what()), "");
+    } catch (const json::out_of_range& e) {
+        // e.g. 1e999: valid JSON syntax, but not representable as a double.
+        fail("out_of_range", ascii_safe(e.what()), "");
+    } catch (const json::exception& e) {
+        fail("malformed_json", ascii_safe(e.what()), "");
     }
 }
 
@@ -86,7 +131,8 @@ void reject_unknown(const json& obj, std::initializer_list<const char*> allowed,
         const bool known =
             std::any_of(allowed.begin(), allowed.end(), [&](const char* a) { return item.key() == a; });
         if (!known) {
-            fail("unknown_field", "unknown field \"" + item.key() + "\"", ptr + "/" + item.key());
+            fail("unknown_field", "unknown field \"" + item.key() + "\"",
+                 ptr + "/" + pointer_token(item.key()));
         }
     }
 }

@@ -72,11 +72,19 @@ execcontract --version
 * The contract path is opened relative to the observed working directory
   (ExecContract never calls `chdir`). Absolute paths are recommended.
 * The report is written to stdout unless `--report PATH` is given, in which
-  case the file is created/truncated (`O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC`,
-  mode `0666 & ~umask`) **after** the snapshot and nothing is written to stdout.
-  This is useful when the launcher under test redirects stdout to `/dev/null`.
+  case the file is created/truncated (`O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC|O_NONBLOCK`,
+  mode `0666 & ~umask`; `O_NONBLOCK` is cleared after opening) **after** the
+  snapshot and nothing is written to stdout. This is useful when the launcher
+  under test redirects stdout to `/dev/null`. A FIFO without a reader fails
+  with `ENXIO` (exit 3) instead of blocking. If the report file cannot be
+  opened, an existing file at that path is left unchanged and may be stale:
+  callers must always check the exit status.
+* `--report` naming the contract file (same device and inode, symlinks
+  followed) is a usage error (exit 2, stderr only): truncating it would
+  destroy the contract.
 * `--help` and `--version` write to stdout and exit 0; they are the only
-  non-JSON stdout outputs.
+  non-JSON stdout outputs. They are recognised only in option position: in
+  `--contract --help` the word `--help` is the contract path.
 * Usage errors (unknown option, missing/duplicated `--contract`, missing
   option value) write a message to stderr, nothing to stdout, and exit 2.
 * stderr carries a one-line human summary after the report has been delivered.
@@ -109,7 +117,13 @@ execcontract --version
 General rules: the top level must be an object; unknown keys are rejected at
 every level (`unknown_field`); nesting deeper than 8 levels is rejected
 (`too_deep`); integers that do not fit in 64 bits are parsed as floating point
-by the JSON library and therefore rejected as a type error, never coerced.
+by the JSON library and therefore rejected as a type error, never coerced;
+numbers that do not even fit in a double (`1e999`) are `out_of_range`. A raw
+NUL byte anywhere in the file is `malformed_json` (the JSON library would
+otherwise treat it as end of input and ignore the rest). Invalid UTF-8 is
+`malformed_json`; error messages quote input bytes only as printable ASCII
+(`\xNN`). A leading UTF-8 byte-order mark is accepted. Error pointers follow
+RFC 6901 (`~` → `~0`, `/` → `~1`).
 
 ### Size limits and behaviour at the caps
 
@@ -118,7 +132,7 @@ by the JSON library and therefore rejected as a type error, never coerced.
 | Contract file size | 65 536 bytes | Accepted | `contract_too_large`, exit 2 |
 | Descriptor entries in a contract | 1 024 | Accepted | `too_many_fd_entries`, exit 2 |
 | Observed descriptor inventory | 1 024 descriptors | Complete inventory | `fd.inventory` is an inspection error (`inventory_capped`), exit 3; already-observed descriptors still yield known evidence |
-| `/proc/self/status` read | 65 536 bytes | Parsed | `umask_unavailable` (`status_too_large`) inspection error |
+| `/proc/self/status` read | 65 536 bytes | Parsed | `umask_unavailable` inspection error |
 | Working-directory path | 65 536 bytes buffer growth | Observed | `cwd_too_long` inspection error |
 | Expected `cwd` length | 4 095 bytes | Accepted | `invalid_path`, exit 2 |
 
@@ -198,7 +212,7 @@ delivered cannot carry its own error). Known violations remain listed in an
 |---|---|---|
 | FR-1 | CLI as in §4; usage errors exit 2 with empty stdout; `--help`/`--version` exit 0. | Unit (`Cli.*`), component (`test_input.py::test_usage_*`, `test_help_version`) |
 | FR-2 | Contract read from a regular file ≤ 64 KiB, opened without blocking; missing, unreadable, non-regular or oversized input → `invalid_contract`. | Unit (`ContractFile.*`), component (`test_input.py`) |
-| FR-3 | Contract validation per §5 including duplicate keys, unknown fields, wrong types, booleans as numbers, negative/overflowing integers, unsupported version, empty contract/areas, duplicates, contradictions, depth. | Unit (`ContractParse.*`), component (`test_input.py`) |
+| FR-3 | Contract validation per §5 including duplicate keys, unknown fields, wrong types, booleans as numbers, negative/overflowing integers and doubles, embedded NUL bytes, invalid UTF-8, unsupported version, empty contract/areas, duplicates, contradictions, depth. | Unit (`ContractParse.*`), component (`test_input.py`) |
 | FR-4 | Descriptor inventory from `/proc/self/fd`, excluding exactly the enumeration stream's own descriptor (`dirfd`), distinguishing complete, failed and capped enumeration; not bounded by `RLIMIT_NOFILE`. | Unit (`FdScan.*`), component (`test_fds.py`) |
 | FR-5 | Descriptor policy per §3: required, permitted, unexpected, closed allowlist. | Unit (`EvaluateFds.*`), component (`test_fds.py`) |
 | FR-6 | Coarse type from `fstat` on the descriptor; never reopening targets or reading symlink text. | Unit (`FdType.*`), component (`test_fds.py::test_type_*`) |
@@ -207,7 +221,7 @@ delivered cannot carry its own error). Known violations remain listed in an
 | FR-9 | Soft/hard limits via `getrlimit` for `RLIMIT_NOFILE` and `RLIMIT_CORE`, `"unlimited"` for `RLIM_INFINITY`, independent soft/hard checks. | Unit (`Rlimit.*`, `EvaluateRlimit.*`), component (`test_rlimits.py`) |
 | FR-10 | Report per §6 with stable ids, deterministic order, explicit `null` for unavailable observations. | Unit (`Report.*`, `Evaluate.AreaOrderIsFixed`), component (`test_reporting.py`) |
 | FR-11 | Outcomes, exit codes and precedence per §7. | Unit (`Aggregate.*`), component (all) |
-| FR-12 | Output failure (closed stdout, `ENOSPC`, broken pipe, unopenable `--report`) never exits 0; `SIGPIPE` does not kill the process silently. | Unit (`WriteAll.*`), component (`test_reporting.py::test_stdout_*`, `test_broken_pipe_*`, `test_report_file_failure_*`) |
+| FR-12 | Output failure (closed stdout, `ENOSPC`, broken pipe, unopenable `--report`, FIFO without reader) never exits 0 and never blocks; `SIGPIPE` does not kill the process silently; `--report` cannot overwrite the contract. | Unit (`WriteAll.*`), component (`test_reporting.py::test_stdout_*`, `test_broken_pipe_*`, `test_report_file_failure_*`, `test_report_to_fifo_*`, `test_report_path_equal_to_contract_is_refused`) |
 | FR-13 | Observation order: the descriptor inventory is taken before ExecContract opens any descriptor of its own; contract and report are opened afterwards. | Code review (`src/main.cpp`), component (`test_fds.py::test_scanner_contamination_fd3`) |
 | FR-14 | A runnable demonstration: one contract fails under a defective launcher and passes under the corrected launcher. | Component (`test_demo.py`), manual (`examples/demo/run-demo.sh`) |
 

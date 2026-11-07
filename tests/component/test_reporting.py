@@ -1,6 +1,7 @@
 """Report format, aggregate outcomes and output-channel failures."""
 
 import json
+import os
 import resource
 
 import pytest
@@ -97,6 +98,26 @@ def test_report_file_when_stdout_is_dev_null(run_probe, tmp_path):
     assert report["outcome"] == "passed"
     # The report file is opened after the inventory, so it is not "unexpected".
     assert [c["id"] for c in report["checks"]] == ["fd.inventory", "fd.0", "fd.1", "fd.2"]
+
+
+def test_report_path_equal_to_contract_is_refused(run_probe, tmp_path):
+    contract = tmp_path / "contract.json"
+    text = '{"version": 1, "umask": "0022"}'
+    contract.write_text(text)
+    link = tmp_path / "alias.json"
+    link.symlink_to(contract)
+    r = run_probe(contract, launch={"umask": 0o022}, extra_args=["--report", str(link)])
+    assert r.code == 2
+    assert r.stdout == ""
+    assert contract.read_text() == text  # not truncated
+
+
+def test_report_to_fifo_without_reader_fails_instead_of_hanging(run_probe, tmp_path):
+    fifo = tmp_path / "report.fifo"
+    os.mkfifo(fifo)
+    r = run_probe({"version": 1, "umask": "0022"}, launch={"umask": 0o022}, extra_args=["--report", str(fifo)])
+    assert r.code == 3  # ENXIO; run_probe's timeout would fail a hang
+    assert "report delivery failed" in r.stderr
 
 
 @pytest.mark.parametrize("target", ["missing-dir/report.json", "/dev/full"])

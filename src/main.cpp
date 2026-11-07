@@ -21,6 +21,7 @@
 
 #include <fcntl.h>
 #include <signal.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <exception>
@@ -49,8 +50,15 @@ int deliver(const std::string& text, const std::optional<std::string>& path, con
         return ec::write_all(STDOUT_FILENO, text);  // borrowed: written, never closed
     }
     stage = "open report file";
-    ec::UniqueFd fd(::open(path->c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOCTTY, 0666));
+    // O_NONBLOCK so a FIFO without a reader fails with ENXIO instead of
+    // blocking forever; the flag is cleared again for ordinary blocking writes.
+    ec::UniqueFd fd(
+        ::open(path->c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOCTTY | O_NONBLOCK, 0666));
     if (!fd) {
+        return errno;
+    }
+    const int flags = ::fcntl(fd.get(), F_GETFL);  // owned descriptor
+    if (flags < 0 || ::fcntl(fd.get(), F_SETFL, flags & ~O_NONBLOCK) < 0) {
         return errno;
     }
     stage = "write report file";
@@ -76,7 +84,19 @@ std::string summary_line(const ec::ReportInput& in) {
            " passed, " + std::to_string(failed) + " failed, " + std::to_string(errors) + " errors)";
 }
 
+// True if both paths exist and name the same file (symlinks followed).
+bool same_file(const std::string& a, const std::string& b) {
+    struct stat sa{}, sb{};
+    return ::stat(a.c_str(), &sa) == 0 && ::stat(b.c_str(), &sb) == 0 && sa.st_dev == sb.st_dev &&
+           sa.st_ino == sb.st_ino;
+}
+
 int run_check(const ec::Snapshot& snapshot, const ec::CliOptions& opts) {
+    if (opts.report_path && same_file(opts.contract_path, *opts.report_path)) {
+        // Truncating the report would destroy the contract.
+        stderr_line("--report must not name the contract file");
+        return 2;
+    }
     ec::ReportInput in;
     const ec::ContractText file = ec::load_contract_file(opts.contract_path);
     if (!file.text) {

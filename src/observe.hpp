@@ -4,6 +4,7 @@
 
 #include "model.hpp"
 
+#include <dirent.h>
 #include <sys/types.h>
 
 #include <cstddef>
@@ -16,7 +17,12 @@ namespace execcontract {
 // descriptor as reported by dirfd(3). At most `cap` descriptors are recorded;
 // one more makes the inventory incomplete with code "inventory_capped".
 // Types are not filled in; see classify_fds().
-FdInventory scan_fd_dir(const char* dir_path, std::size_t cap);
+//
+// `next_entry` is a test seam for the one failure that cannot be produced
+// unprivileged on procfs: readdir() failing mid-enumeration. Production code
+// always uses the default.
+using ReaddirFn = dirent* (*)(DIR*);
+FdInventory scan_fd_dir(const char* dir_path, std::size_t cap, ReaddirFn next_entry = ::readdir);
 
 // Fill FdEntry::type / type_error with fstat(2) on each descriptor number.
 void classify_fds(FdInventory& inventory);

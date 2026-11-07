@@ -40,11 +40,47 @@ def test_directory_and_fifo_contracts(run_probe, tmp_path):
     assert_invalid(run_probe(fifo), "contract_not_regular_file")  # returns without blocking
 
 
-@pytest.mark.parametrize("text", ["", "{", '{"version": 1,}', "[1]", '{"version": 1} {}'])
-def test_malformed_contract(run_probe, text):
-    r = run_probe(text)
-    assert r.code == 2
-    assert r.report["error"]["code"] in {"malformed_json", "invalid_type"}
+@pytest.mark.parametrize(
+    "text,code",
+    [
+        ("", "malformed_json"),
+        ("{", "malformed_json"),
+        ('{"version": 1,}', "malformed_json"),
+        ('{"version": 1} {}', "malformed_json"),
+        ("[1]", "invalid_type"),
+    ],
+)
+def test_malformed_contract(run_probe, text, code):
+    assert_invalid(run_probe(text), code)
+
+
+def test_embedded_nul_does_not_truncate_the_contract(run_probe):
+    """Everything after a NUL must not be silently ignored (false pass)."""
+    weak = b'{"version": 1, "umask": "0022"}'
+    strict = b'{"version": 1, "umask": "0022", "fds": {"required": []}}'
+    r = run_probe(weak + b"\0" + strict, launch={"umask": 0o022})
+    assert_invalid(r, "malformed_json")
+
+
+@pytest.mark.parametrize(
+    "text",
+    ['{"version": 1, "rlimit_core": {"soft": 1e999}}', '{"version": 1e999, "umask": "0022"}'],
+)
+def test_number_overflow_is_invalid_contract(run_probe, text):
+    assert_invalid(run_probe(text), "out_of_range")
+
+
+@pytest.mark.parametrize(
+    "raw", [b'{"version": 1, "cwd": "/\xff"}', b"\xff{}", b'{"\xc3\x28": 1}'], ids=["value", "lead", "key"]
+)
+def test_invalid_utf8_contract_still_gets_a_report(run_probe, raw):
+    r = run_probe(raw)
+    assert_invalid(r, "malformed_json")  # not exit 3 / serialization_failed
+
+
+def test_utf8_bom_is_accepted(run_probe):
+    r = run_probe(b'\xef\xbb\xbf{"version": 1, "umask": "0022"}', launch={"umask": 0o022})
+    assert r.code == 0, r.stdout
 
 
 def test_oversized_contract_boundary(run_probe, tmp_path):
@@ -96,6 +132,12 @@ def test_usage_errors(run_probe, args):
     assert r.code == 2
     assert r.stdout == ""  # usage errors never produce a report
     assert "Usage:" in r.stderr
+
+
+def test_option_value_named_help_is_a_path(run_probe):
+    r = run_probe(args=["--contract", "--help"])
+    assert r.code == 2
+    assert r.report["error"]["code"] == "contract_not_found"
 
 
 def test_help_version(run_probe):

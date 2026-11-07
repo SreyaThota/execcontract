@@ -31,6 +31,17 @@ TEST(Cli, HelpAndVersionWin) {
     EXPECT_EQ(parse({"--version"}).options->mode, CliOptions::Mode::version);
 }
 
+TEST(Cli, OptionValuesAreNotMistakenForHelpOrVersion) {
+    const auto r = parse({"--contract", "--help"});
+    ASSERT_TRUE(r.options);
+    EXPECT_EQ(r.options->mode, CliOptions::Mode::check);
+    EXPECT_EQ(r.options->contract_path, "--help");
+    const auto v = parse({"--report", "--version", "--contract", "c.json"});
+    ASSERT_TRUE(v.options);
+    EXPECT_EQ(v.options->mode, CliOptions::Mode::check);
+    EXPECT_EQ(v.options->report_path, std::optional<std::string>("--version"));
+}
+
 TEST(Cli, UsageErrors) {
     EXPECT_FALSE(parse({}).options);
     EXPECT_FALSE(parse({"--contract"}).options);

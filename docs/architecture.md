@@ -97,7 +97,9 @@ see below), and nothing here is synchronised with external actors.
 | `Observed<T>` with neither value nor error (programming error) | `observation_missing` | fails closed as an inspection error |
 | Non-UTF-8 observed path | `cwd_not_utf8` with length and offset only | 3 |
 | Serialisation throws (strict UTF-8) | constant ASCII fallback report | `internal_error`, 3 |
-| Report write/close fails, `EPIPE` (SIGPIPE is ignored), `ENOSPC`, `EBADF` | stderr message | 3, never 0 |
+| Report write/close fails, `EPIPE` (SIGPIPE is ignored), `ENOSPC`, `EBADF`, FIFO without reader (`ENXIO`, report opened `O_NONBLOCK`) | stderr message | 3, never 0 |
+| `--report` names the contract file | stderr message, contract untouched | 2 |
+| Raw NUL, invalid UTF-8, number beyond double range in the contract | `malformed_json` / `out_of_range`, message bytes ASCII-escaped | `invalid_contract`, 2 |
 | Uncaught exception (e.g. `bad_alloc`) | stderr message | 3 |
 
 Precedence: usage → invalid contract → inspection failure → violation → pass;
@@ -112,11 +114,16 @@ and reading it immediately after.
 
 ## Test seams
 
-Two narrow seams exist, both plain parameters rather than mocks:
+Three narrow seams exist, all plain parameters rather than mocks:
 
-* `scan_fd_dir(path, cap)` — production passes `/proc/self/fd`; unit tests
-  pass temporary directories with crafted names to exercise numeric parsing,
-  unparseable entries, the cap boundary and a missing directory.
+* `scan_fd_dir(path, cap, next_entry)` — production passes `/proc/self/fd`
+  and the default `::readdir`; unit tests pass temporary directories with
+  crafted names to exercise numeric parsing, unparseable entries, the cap
+  boundary and a missing directory.
+* The `next_entry` function pointer of the same function exists for one
+  failure only: `readdir` failing mid-enumeration (and a successful call that
+  leaves `errno` modified), which cannot be produced unprivileged on procfs.
+  The test wrapper calls the real `readdir` and fails at a chosen point.
 * `read_umask(path)` / `parse_umask_status(text)` — tests supply status files
   without the field, malformed values or oversized content.
 

@@ -35,7 +35,7 @@ Python process sets descriptors, cwd, umask and limits and then `execv`s the
 real binary; PEP 446 makes every descriptor Python opens non-inheritable, so
 only explicitly installed descriptors (and 0–2) reach the probe. pytest's own
 state is never changed. Trade-off: one extra Python interpreter start per
-test (the 85-test suite still runs in about 3–5 s here).
+test (the 96-test suite still runs in about 3–5 s here).
 
 **D6. `/proc/self/fd` + `dirfd()` exclusion, not a loop to `RLIMIT_NOFILE`.**
 A loop with `fcntl(F_GETFD)` up to the soft limit misses descriptors above a

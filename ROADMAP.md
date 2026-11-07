@@ -55,11 +55,14 @@ Ordered by expected value for launcher testing:
 
 ## Hardening with more time
 
-* **readdir error path is untested.** The `errno`-based distinction between
-  end-of-directory and a `readdir` failure is implemented and reviewed, but no
-  test can trigger a procfs `readdir` error unprivileged; a mutation that
-  ignores the error survives the test suite. Options: an injectable directory
-  reader for that one loop, or a FUSE-based fixture in CI.
+* The `readdir` failure branch is covered by a unit test through an
+  injected `readdir` function, not by a real procfs failure (which cannot be
+  produced unprivileged). A FUSE-based fixture in CI would give end-to-end
+  evidence.
+* `--report` truncates the target in place. Writing to a temporary file in
+  the same directory and `rename`-ing it would make the report atomic and
+  avoid leaving a partial file on a mid-write failure (the exit status is
+  already correct in that case).
 * Opening the contract can have side effects for device files (it is opened
   `O_NONBLOCK|O_NOCTTY` and rejected if not regular, but the `open` itself
   happens first). Opening with `O_PATH`, checking, then reopening would avoid

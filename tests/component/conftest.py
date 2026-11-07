@@ -4,6 +4,8 @@ Every test runs the real compiled probe. Its path comes from the build/test
 configuration (CTest sets EXECCONTRACT_BIN); there is no fallback path.
 """
 
+from __future__ import annotations  # `dict | None` annotations on Python < 3.10
+
 import json
 import os
 import subprocess

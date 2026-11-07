@@ -38,7 +38,7 @@ SysError sys_error(const char* code, int err, std::string detail) {
 
 }  // namespace
 
-FdInventory scan_fd_dir(const char* dir_path, std::size_t cap) {
+FdInventory scan_fd_dir(const char* dir_path, std::size_t cap, ReaddirFn next_entry) {
     FdInventory inv;
     DIR* raw = ::opendir(dir_path);
     if (raw == nullptr) {
@@ -62,7 +62,7 @@ FdInventory scan_fd_dir(const char* dir_path, std::size_t cap) {
         // errno distinguishes them, so it is cleared immediately before the
         // call and read immediately after, with no other call in between.
         errno = 0;
-        const dirent* entry = ::readdir(raw);
+        const dirent* entry = next_entry(raw);
         if (entry == nullptr) {
             const int err = errno;
             if (err != 0) {

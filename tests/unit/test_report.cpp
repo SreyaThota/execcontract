@@ -1,3 +1,4 @@
+#include "contract.hpp"
 #include "report.hpp"
 
 #include <gtest/gtest.h>
@@ -94,6 +95,19 @@ TEST(Report, InvalidUtf8IsASerialisationFailureNotReplacement) {
     ReportInput in = sample();
     in.checks[0].observed = "/bad\xFF";
     EXPECT_THROW(render_report(in), nlohmann::json::exception);
+}
+
+TEST(Report, InvalidUtf8ContractStillRendersInvalidContractReport) {
+    // End to end over parse + render: the report must stay a normal
+    // invalid_contract report, not fall back to serialization_failed.
+    const ContractResult parsed = parse_contract("{\"version\":1,\"cwd\":\"/\xFF\"}");
+    ASSERT_TRUE(parsed.error);
+    ReportInput in;
+    in.outcome = Outcome::invalid_contract;
+    in.error = ReportError{parsed.error->code, parsed.error->message, 0, parsed.error->pointer};
+    const json r = json::parse(render_report(in));
+    EXPECT_EQ(r["outcome"], "invalid_contract");
+    EXPECT_EQ(r["error"]["code"], "malformed_json");
 }
 
 TEST(Report, FallbackIsValidJson) {

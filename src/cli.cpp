@@ -4,17 +4,24 @@ namespace execcontract {
 
 CliResult parse_args(const std::vector<std::string_view>& args) {
     CliResult result;
-    for (const std::string_view a : args) {
-        if (a == "--help" || a == "-h") {
-            result.options = CliOptions{CliOptions::Mode::help, {}, std::nullopt};
-            return result;
+    // --help / --version win over everything else, but only in option
+    // position: in "--contract --help" the word is the contract path.
+    bool help = false;
+    bool version = false;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        const std::string_view a = args[i];
+        if (a == "--contract" || a == "--report") {
+            ++i;  // skip the option's value
+        } else if (a == "--help" || a == "-h") {
+            help = true;
+        } else if (a == "--version") {
+            version = true;
         }
     }
-    for (const std::string_view a : args) {
-        if (a == "--version") {
-            result.options = CliOptions{CliOptions::Mode::version, {}, std::nullopt};
-            return result;
-        }
+    if (help || version) {
+        result.options =
+            CliOptions{help ? CliOptions::Mode::help : CliOptions::Mode::version, {}, std::nullopt};
+        return result;
     }
 
     CliOptions opts;
