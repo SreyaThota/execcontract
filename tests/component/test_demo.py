@@ -13,10 +13,16 @@ TIMEOUT = 20
 def demo(source_dir):
     d = source_dir / "examples" / "demo"
     assert (d / "contract.json").is_file()
+    return d
+
+
+@pytest.fixture
+def corrected_demo(demo):
+    """Only tests that run the corrected launcher need its target limit."""
     _, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
     if hard != resource.RLIM_INFINITY and hard < 1024:
         pytest.skip(f"the corrected launcher sets a soft RLIMIT_NOFILE of 1024; hard limit is {hard}")
-    return d
+    return demo
 
 
 def launch(demo, launcher, binary):
@@ -42,20 +48,20 @@ def test_defective_launcher_violates_contract(demo, binary):
 
 
 @pytest.mark.exact_fds
-def test_corrected_launcher_satisfies_contract(demo, binary):
-    code, report = launch(demo, "launch-fixed.sh", binary)
+def test_corrected_launcher_satisfies_contract(corrected_demo, binary):
+    code, report = launch(corrected_demo, "launch-fixed.sh", binary)
     assert code == 0, json.dumps(report, indent=2)
     assert report["outcome"] == "passed"
 
 
 @pytest.mark.exact_fds
 @pytest.mark.parametrize("relative", [False, True], ids=["absolute-binary", "relative-binary"])
-def test_run_demo_script(demo, binary, relative):
+def test_run_demo_script(corrected_demo, binary, relative):
     # The README runs the demo with a relative path (build/execcontract);
     # the script changes directory, so both forms must work.
     arg = f"./{binary.name}" if relative else str(binary)
     proc = subprocess.run(
-        ["/bin/sh", str(demo / "run-demo.sh"), arg],
+        ["/bin/sh", str(corrected_demo / "run-demo.sh"), arg],
         cwd=binary.parent,
         stdin=subprocess.DEVNULL,
         capture_output=True,

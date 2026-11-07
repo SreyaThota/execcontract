@@ -50,7 +50,7 @@ cmake -S . -B build-dbg -G Ninja -DCMAKE_BUILD_TYPE=Debug && cmake --build build
 gdb --args build-dbg/execcontract --contract examples/minimal.json
 (gdb) break execcontract::scan_fd_dir
 (gdb) run
-(gdb) finish          # look at inv.scanner_fd and inv.entries
+(gdb) finish          # inspect the returned inventory; local inv is now out of scope
 ```
 
 ## 2. Ownership: owned vs borrowed descriptors
@@ -78,7 +78,7 @@ Questions to be able to answer:
 | `/proc/self/status` `Umask:` | read-only umask (Linux ≥ 4.7); `umask(2)` can only read by writing | `read_umask` |
 | `getrlimit` | `RLIM_INFINITY` ≠ any finite value; soft limit restricts *new* descriptors only | `observe_rlimit` |
 | `getcwd` | kernel's physical path; `ENOENT` if the directory was removed; `$PWD` is irrelevant | `observe_cwd` |
-| `write` | short writes and `EINTR` are normal; `EPIPE` only if SIGPIPE is ignored | `write_all` |
+| `write` | handle short writes and `EINTR`; this program ignores SIGPIPE so it can handle broken-pipe errors | `write_all` |
 | nlohmann `parse` with callback | keeps the last duplicate key; stops at a NUL byte; throws `out_of_range` for `1e999` | `parse_strict` |
 
 ## 4. Error precedence
@@ -133,32 +133,130 @@ EXECCONTRACT_BIN=$PWD/build/execcontract python3 -m pytest tests/component -k sc
 
 ## 7. Rehearsal exercises
 
-Do these yourself, without an assistant, and keep notes of what you saw.
+These exercises are still for the candidate to perform. Reading the answers
+or asking an assistant to run them does not establish independent debugging
+ability. Record the commands, observed failures and your explanation.
 
-**E1 — Reproduce the scanner false pass.** In `scan_fd_dir()`, delete the
-`if (fd == inv.scanner_fd) { continue; }` block. Rebuild and run
-`pytest … -k scanner_contamination -vv`. Explain from the failure output why
-fd 3 is now reported present, then restore the block (`git checkout src/observe.cpp`).
+### Prepare an isolated practice clone
 
-**E2 — Reproduce the NUL false pass.** In `parse_strict()`, comment out the
-NUL check. Create `printf '{"version":1,"umask":"0022"}\0{"version":1,"fds":{"required":[]}}' > /tmp/nul.json`,
-run `build/execcontract --contract /tmp/nul.json; echo $?`, and explain the
-exit status 0. Run `ctest -R EmbeddedNul` to see the regression test fail.
-Restore.
+Run these commands in Linux, from the submission repository. The clone uses
+the current committed revision, so commit any changes you intend to practise
+first. All deliberate mutations and restores below happen only in this clone.
 
-**E3 — A real, small open issue: fix it yourself.** `tests/component/test_demo.py`
-skips *all four* demo tests when the hard `RLIMIT_NOFILE` is below 1024
-(`demo` fixture), although only the corrected launcher (`ulimit -S -n 1024`)
-needs that. Under `prlimit --nofile=128:128` the defective-launcher test is
-therefore skipped needlessly.
-- Make only the tests that run `launch-fixed.sh` skip; keep the reason text.
-- Prove it: run
-  `prlimit --nofile=128:128 -- env EXECCONTRACT_BIN=$PWD/build/execcontract python3 -m pytest tests/component/test_demo.py -rs`
-  before and after (the defective test should go from *skipped* to *passed*),
-  and run the full suite normally.
-- Commit with a message that explains the change.
+```bash
+repo=$(pwd -P)
+practice_root=$(mktemp -d "${TMPDIR:-/tmp}/execcontract-rehearsal.XXXXXX")
+git clone --no-hardlinks "$repo" "$practice_root/repo"
+cd "$practice_root/repo"
+cmake -S . -B build -G Ninja -DEXECCONTRACT_BUILD_TESTS=ON -DEXECCONTRACT_SANITIZE=OFF
+cmake --build build
+export EXECCONTRACT_BIN="$PWD/build/execcontract"
+ctest --test-dir build --output-on-failure --no-tests=error
+```
 
-**E4 — Explain without notes.** Answer the questions in
-[docs/verification.md](docs/verification.md#independent-review) aloud: for
-each review finding, say what input triggered it, why the old code
-misbehaved, and which test now fails without the fix.
+Stop if this baseline fails. Use the normal build: a sanitizer runtime can
+change the descriptor inventory you are trying to observe.
+
+### E1 Reproduce scanner contamination
+
+In the practice clone's `src/observe.cpp`, remove only the block that skips
+`inv.scanner_fd` in `scan_fd_dir()`. Rebuild and run the targeted tests:
+
+```bash
+cmake --build build
+python3 -m pytest -p no:cacheprovider tests/component/test_fds.py -k scanner_contamination -vv
+```
+
+Expect regression failures. Read the test's assertions as well as the output:
+an earlier inventory-count assertion may fail before the verdict assertion.
+Explain why an absent inherited fd 3 can be occupied by `opendir`, and why
+that temporary descriptor must not count as evidence that the launcher
+supplied fd 3. Also explain the case with fd 0 closed.
+
+Restore only your deliberate mutation, rebuild and rerun:
+
+```bash
+git restore --source=HEAD -- src/observe.cpp
+cmake --build build
+python3 -m pytest -p no:cacheprovider tests/component/test_fds.py -k scanner_contamination -vv
+```
+
+The targeted tests should pass again. Never run the restore command against
+unrelated edits in the submission working tree.
+
+### E2 Reproduce the NUL truncation bug
+
+Create a private fixture inside the practice build directory. This command
+sets the umask in a subshell, so the weak prefix has a known passing value:
+
+```bash
+printf '%s\0%s' '{"version":1,"umask":"0022"}' '{"version":1,"fds":{"required":[]}}' > build/nul-contract.json
+status=0
+(umask 0022; "$EXECCONTRACT_BIN" --contract build/nul-contract.json) || status=$?
+printf 'exit=%s\n' "$status"
+ctest --test-dir build -R EmbeddedNul --output-on-failure --no-tests=error
+```
+
+Baseline: the CLI should reject the input with exit 2, and the regression
+unit test should pass. Remove only the raw-NUL guard at the beginning of
+`parse_strict()` in the practice clone's `src/contract.cpp`, then rebuild:
+
+```bash
+cmake --build build
+status=0
+(umask 0022; "$EXECCONTRACT_BIN" --contract build/nul-contract.json) || status=$?
+printf 'exit=%s\n' "$status"
+ctest --test-dir build -R EmbeddedNul --output-on-failure --no-tests=error
+```
+
+With the recorded nlohmann/json version, expect the mutant to accept the
+weak prefix (exit 0) and the regression test to fail. Explain the difference
+between a raw NUL byte in the input and an escaped JSON string character.
+If your result differs, investigate the library version and actual report;
+do not record the expected result as an observation.
+
+Restore, rebuild and confirm rejection plus a passing regression test:
+
+```bash
+git restore --source=HEAD -- src/contract.cpp
+cmake --build build
+status=0
+(umask 0022; "$EXECCONTRACT_BIN" --contract build/nul-contract.json) || status=$?
+printf 'exit=%s\n' "$status"
+ctest --test-dir build -R EmbeddedNul --output-on-failure --no-tests=error
+```
+
+### E3 Explain the demo prerequisite fix
+
+The original shared `demo` fixture skipped all four demo cases below a hard
+`RLIMIT_NOFILE` of 1024. Only the corrected launcher sets that soft limit.
+The revised `demo` fixture just finds the example directory; `corrected_demo`
+adds the limit check for tests that actually run the corrected launcher.
+
+```bash
+prlimit --nofile=128:128 -- env EXECCONTRACT_BIN="$EXECCONTRACT_BIN" python3 -m pytest -p no:cacheprovider tests/component/test_demo.py -rs
+python3 -m pytest -p no:cacheprovider tests/component/test_demo.py -rs
+ctest --test-dir build --output-on-failure --no-tests=error
+```
+
+Expected at 128:128: the defective-launcher case runs and passes, while the
+three cases involving the corrected launcher skip. At normal limits all
+four should pass. These expectations still need Linux execution for the
+follow-up revision; source-level fixture checks are not a substitute.
+
+In the practice clone, move the guard back to the shared fixture and repeat
+the low-limit command. Explain why this reduces coverage without changing
+the production executable. Restore the original practice-clone file when
+finished. The assistant prepared this fix; describe it as your own only if
+you independently implement or reproduce it, with that distinction clear.
+
+### E4 Explain without notes
+
+For each review finding, state the triggering input, the old behavior, the
+fix and the check that detects its removal. Trace one invocation from
+`main()` to exit. Explain owned versus borrowed descriptors, error
+precedence, `RLIM_INFINITY`, and why a successful test count does not alone
+establish that the intended tests ran.
+
+Finish by naming what you personally ran or changed and what an assistant
+did. Use actual observations, including anything you could not reproduce.

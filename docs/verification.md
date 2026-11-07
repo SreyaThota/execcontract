@@ -1,6 +1,7 @@
 # Verification record (release 0.1.0)
 
-Everything below was executed; nothing is extrapolated. Date: 2026-11-07.
+Execution records dated 2026-11-07. The follow-up submission preparation
+section separately identifies changes and expectations not yet run on Linux.
 Figures refer to commit `582ffa3` (after both reviews) unless a row says
 otherwise; this record itself was committed afterwards. All runs were made by
 the AI coding agent in the author's WSL environment; the external reviewer
@@ -286,3 +287,44 @@ no new false pass in the inspection core. Its items and their resolution:
 | NFR-7 single-threaded | — | Review: no threads; reviewer checked `nm` for static initialisers |
 | NFR-8 latency | — | Measurements above |
 | NFR-9 warnings, sanitizers | — | `verify.sh` run above |
+
+## Follow-up submission preparation
+
+Prepared after `2d51573` by the external AI reviewer on 2026-11-07. The
+Linux execution tables above remain evidence for their explicitly named
+revisions; they have not been rerun for these follow-up changes.
+
+- The demo prerequisite is now scoped to `corrected_demo`. The defective
+  launcher test no longer skips merely because the hard descriptor limit is
+  below 1024. Source-level checks with mocked limits verify the fixture
+  branching; actual demo and full-suite Linux runs are still required.
+- `DEVELOPER_NOTES.md` now gives complete practice-clone commands, rebuilds
+  before and after mutations, controls the umask for the NUL demonstration,
+  and makes CTest fail if the targeted test is absent. The candidate has not
+  reported completing this rehearsal.
+- The essay placeholders were replaced with an assisted draft grounded in
+  the candidate's project direction and review requests. It makes no claim
+  of personal coding or debugging. The candidate must review its first-person
+  statements before using it as their reflection.
+- The concurrent pipe-test comment now describes complete delivery without
+  claiming deterministic short-write coverage. Executable behavior is unchanged.
+
+The external review could not execute WSL (`Wsl/E_ACCESSDENIED`). Windows
+Python syntax and fixture-branch checks do not establish Linux correctness.
+
+### Linux results for the follow-up changes
+
+Run afterwards by the in-session AI coding agent on the same WSL environment,
+against the working tree containing the follow-up edits (base `2d51573`):
+
+| Check | Result |
+|---|---|
+| `scripts/verify.sh` (fresh build root) | exit 0; both builds register 102 unit + 1 component entry; 103/103 each; clang-format clean |
+| `test_demo.py` at normal limits | 4 passed |
+| `test_demo.py` under `prlimit --nofile=128:128` | 1 passed (defective launcher), 3 skipped (corrected launcher) — matches the expectation above |
+| Component suite at 10240:1048576 / 1024:1024 / 128:128 | 96 passed / 94 passed, 2 skipped / **88 passed, 8 skipped** (previously 87 / 9: the defective-launcher test now runs) |
+| `DEVELOPER_NOTES.md` E1 commands, verbatim, in a practice clone of `2d51573` | Baseline 103/103. Without the scanner exclusion both contamination tests fail (`count` 4 instead of 3 for fd 3; fd 0 reported `pass` instead of `fail`/`missing`); after `git restore`, 2 passed |
+| E2 commands, verbatim | Baseline exit 2 and `EmbeddedNul` test passes; without the NUL guard exit **0** and the test fails; after restore exit 2 and passing |
+
+These runs check that the rehearsal instructions work as written. They are
+not the author's rehearsal, which remains to be done.

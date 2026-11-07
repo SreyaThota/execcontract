@@ -87,8 +87,8 @@ TEST(WriteAll, ClosedDescriptorReportsEbadf) {
 
 TEST(WriteAll, LargeWriteThroughPipeIsCompleteWithConcurrentReader) {
     // Pipe capacity is not guaranteed (pipe(7)), so the test must not rely on
-    // the data fitting. 1 MiB exceeds any default capacity and forces many
-    // partial writes while a reader drains concurrently.
+    // the data fitting. A concurrent reader drains the 1 MiB payload.
+    // This checks complete delivery, not deterministic short-write or EINTR coverage.
     struct sigaction ign{}, old{};
     ign.sa_handler = SIG_IGN;
     ASSERT_EQ(::sigaction(SIGPIPE, &ign, &old), 0);  // a dead reader -> EPIPE, not a killed test
