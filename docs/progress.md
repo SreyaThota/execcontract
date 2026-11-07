@@ -11,6 +11,7 @@ Evidence (commands, outputs, counts) is in `docs/verification.md`.
 | 3 Component hardening | done | 85 → 96 pytest tests; mutation check 9/10 → 10/10; ASan contaminates `RLIMIT_CORE` (configured with `disable_coredump=0`). |
 | 4 Completion | done | Docs, essay, verification record, independent AI review (F1–F9 fixed or documented), clean-clone README check. |
 | 5 Second review | engineering fixes complete | External static review: verify.sh could pass without tests, launcher/limit and pipe-capacity assumptions, overstated guarantees, essay authorship. All fixed or narrowed; suite now run under nofile limits down to 128:128. The assisted essay is complete; E1/E2 were reproduced by the coding agent, without a claim of author execution. |
+| 6 Final audit | done | Added the borrowed-descriptor non-interference test and a fixed-seed mutation test of the contract path; CI workflow (Ubuntu 24.04, GCC 13); 17-mutant check; consolidated verification record; README architecture/decision sections; `docs/INTERVIEW_PREPARATION.md`. |
 
 ## Decisions taken during the work
 
@@ -24,13 +25,11 @@ Evidence (commands, outputs, counts) is in `docs/verification.md`.
 
 ## Submission status and remaining work
 
-* E1/E2 have been reproduced by the coding agent twice (at `2d51573` and at
-  the published `3e892a1`); see `docs/verification.md`. An external
-  reviewer's attempt was sandbox-blocked and ran nothing. No author-performed
-  rehearsal is claimed.
-* E3 is fixed and agent-verified at normal and reduced descriptor limits.
-* MIT licence selected on the candidate's behalf; see `LICENSE`.
-* Published as a public repository: https://github.com/SreyaThota/execcontract
-  (`3e892a1` and later). No CI workflow is present.
-* Roadmap hardening items (atomic report write, `O_PATH` contract open,
-  fuzzing, multi-distro CI).
+* Engineering, tests, verification and documentation are complete for 0.1.0
+  (final code commit `9ccb680`; evidence in `docs/verification.md`).
+* All recorded runs, including E1/E2, were executed by AI agents; the
+  author's own rehearsal (`DEVELOPER_NOTES.md` section 7) is not recorded.
+* MIT licence; public repository https://github.com/SreyaThota/execcontract.
+* CI is defined; its first run happens when the final commits are pushed.
+* Remaining hardening is in `ROADMAP.md` (atomic report write, `O_PATH`
+  contract open, coverage-guided fuzzing, broader CI).

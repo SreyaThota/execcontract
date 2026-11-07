@@ -244,7 +244,7 @@ delivered cannot carry its own error). Known violations remain listed in an
 | NFR-3 | Deterministic: identical state and contract give a byte-identical report. | Unit (`Report.Deterministic`), component (`test_reporting.py::test_deterministic`) |
 | NFR-4 | Build and tests work offline once the documented distro packages are installed; no download-at-configure. | `find_package` only; offline verification run recorded in `docs/verification.md` |
 | NFR-5 | Reproducible: one documented script (`scripts/verify.sh`) configures, builds and runs all tests from a clean build directory. | Recorded run in `docs/verification.md` |
-| NFR-6 | Observation is read-only: ExecContract never closes, reads, seeks or changes flags of inherited descriptors, never calls `umask()`, `setrlimit()` or `chdir()`; only the designated report channel is written. | Code review, unit tests on collectors, component tests |
+| NFR-6 | Observation is read-only: ExecContract never closes, reads, seeks or changes flags of inherited descriptors, never calls `umask()`, `setrlimit()` or `chdir()`; only the designated report channel is written. | Component (`test_fds.py::test_inherited_descriptors_are_not_read_moved_or_modified`: offset, flags and unread pipe/stdin data checked through shared open file descriptions), unit (`Umask.LiveObservationMatchesAndDoesNotChangeIt`), code review |
 | NFR-7 | Single-threaded; no static initialisers that open resources. | Code review |
 | NFR-8 | Latency: median wall-clock time of one run ≤ 20 ms on the reference environment (§10), measured by `scripts/measure_latency.py` (200 sequential runs, `time.perf_counter_ns` around `subprocess.run`, includes process creation). | Measurement recorded in `docs/verification.md` |
 | NFR-9 | Project code compiles without warnings under `-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow`; unit tests pass under ASan+UBSan. | Build logs in `docs/verification.md` |
@@ -265,4 +265,4 @@ delivered cannot carry its own error). Known violations remain listed in an
 ## 11. Traceability
 
 The traceability matrix mapping each requirement to concrete tests is in
-[docs/verification.md](verification.md#traceability).
+[docs/verification.md](verification.md#8-traceability).

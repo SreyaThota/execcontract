@@ -39,6 +39,10 @@ build, formatting):
 scripts/verify.sh            # build trees under ./build-verify
 ```
 
+The GitHub Actions workflow (`.github/workflows/ci.yml`) runs the same
+script on Ubuntu 24.04 for every push and pull request, plus the suite under
+`RLIMIT_NOFILE` 1024:1024 and 128:128.
+
 `verify.sh` sets every test-relevant CMake option explicitly (so a stale
 cache cannot disable tests or leave sanitizers on in the normal build), fails
 if no unit tests or no component entry are registered, and runs `ctest` with
@@ -69,12 +73,15 @@ src/            implementation (static library execcontract_core + main.cpp)
   report.*      JSON report
   cli.*         argument parsing
   main.cpp      orchestration and report delivery
-tests/unit/       GoogleTest unit tests (one file per module)
+tests/unit/       GoogleTest unit tests (one file per module, plus
+                  test_robustness.cpp: fixed-seed mutation test)
 tests/component/  pytest tests driving the built binary; launcher.py sets
                   up the execution context and execs the probe
 examples/         contracts and the failing-and-fixed launcher demo
 scripts/          verify.sh, measure_latency.py
-docs/             requirements, architecture, decisions, verification, essay
+.github/workflows CI: verify.sh on Ubuntu 24.04
+docs/             requirements, architecture, decisions, verification,
+                  essay, interview preparation, progress record
 ```
 
 Read [docs/architecture.md](docs/architecture.md) before changing

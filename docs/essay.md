@@ -52,12 +52,11 @@ descriptors, directory, umask and limits, restores default SIGPIPE handling
 and executes the probe. This keeps process-wide changes out of pytest.
 CTest and subprocess timeouts bound the verification runs.
 
-The verification record reports 102 unit tests and 96 component tests passing
-normally. Sanitizer runs include the unit tests and 81 component tests;
+The verification record reports 103 unit tests and 97 component tests passing
+normally. Sanitizer runs include the unit tests and 82 component tests;
 15 cases requiring an exact descriptor inventory are excluded because
-instrumentation can alter that inventory. The follow-up Linux run reports
-88 component tests passing and eight skipping under a hard descriptor limit
-of 128. Ten injected mutants were detected at an earlier recorded revision.
+instrumentation can alter that inventory. Under a hard descriptor limit of
+128, 89 component tests pass and eight skip with stated reasons. All 17 injected mutants, including the E1 and E2 regressions, were detected at the final code revision.
 The record also documents a clean clone and the successful removal and
 restoration of the scanner and NUL guards. These checks were performed by
 agents on one WSL Linux configuration; other distributions remain unverified.

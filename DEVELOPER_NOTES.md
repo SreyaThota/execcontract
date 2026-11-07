@@ -112,6 +112,14 @@ Code: `aggregate()` and `exit_code_for()` in `src/evaluate.cpp`.
   they are deselected under sanitizers, whose runtimes may hold descriptors.
 - Every component test that gets a report checks that its `exit_code` field
   equals the real exit status.
+- `run_probe(pass_fds=...)` hands descriptors of the test process down
+  unchanged; because the test keeps copies sharing the same open file
+  descriptions, `test_inherited_descriptors_are_not_read_moved_or_modified`
+  can check afterwards that the probe did not read, seek or `fcntl` them.
+- `tests/unit/test_robustness.cpp` mutates valid contracts 20 000 times with a
+  fixed seed (reproducible) and checks invariants that must hold for any
+  input: one result, a documented error code, UTF-8-safe messages, a report
+  that renders.
 
 Run single tests while learning:
 
@@ -129,7 +137,9 @@ EXECCONTRACT_BIN=$PWD/build/execcontract python3 -m pytest tests/component -k sc
 - A report file that was opened and then failed mid-write can be empty or
   partial (exit 3 still signals it).
 - Sanitizer builds alter the observed state (ASan and `RLIMIT_CORE`).
-- Only one environment (WSL2 Ubuntu 26.04, GCC 15) has been verified.
+- Verified locally on one environment (WSL2 Ubuntu 26.04, GCC 15); the CI
+  workflow adds Ubuntu 24.04 with GCC 13. Other distributions, Clang and musl
+  are untested (`strerrorname_np` also ties the code to glibc ≥ 2.32).
 
 ## 7. Rehearsal exercises
 

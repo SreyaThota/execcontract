@@ -29,6 +29,47 @@ and nothing earlier than `main()` is visible. It says nothing about the real
 service's behaviour after startup, and checking `RLIMIT_CORE` does not
 establish the host's whole core-dump policy.
 
+## How it works
+
+```
+main()
+ 1. collect_snapshot()       observe.cpp   descriptor inventory FIRST, then umask, limits, cwd
+ 2. parse_args()             cli.cpp
+ 3. load + validate contract contract.cpp  bounded, strict JSON schema
+ 4. evaluate() + aggregate() evaluate.cpp  pure: contract × observations → checks → outcome
+ 5. render + deliver report  report.cpp, main.cpp  every write checked
+```
+
+* **Observation before anything else.** ExecContract inspects its own
+  process, so anything it opens would contaminate the result. The descriptor
+  inventory is taken before the contract or report is opened. Listing
+  `/proc/self/fd` itself needs a descriptor — if the launcher forgot fd 3,
+  that listing *becomes* fd 3 — so the scanner excludes exactly the number
+  returned by `dirfd()`.
+* **Read-only observation.** Inherited descriptors are only enumerated and
+  classified with `fstat`; they are never read, seeked, closed or modified.
+  The umask is read from `/proc/self/status` (`umask(2)` can only read by
+  writing).
+* **Pure core.** Validation, evaluation and rendering are plain functions
+  over value types; only collection and file I/O touch the OS.
+* **Three-valued checks.** `pass`, `fail` (observed and wrong) and `error`
+  (could not be observed). Unknown values are never reported as `0`, `[]` or
+  `"unlimited"`, and an error always outranks a violation.
+
+Details: [docs/architecture.md](docs/architecture.md); decisions and
+alternatives: [docs/engineering-decisions.md](docs/engineering-decisions.md).
+
+## Key technical decisions
+
+| Decision | Why |
+|---|---|
+| C++17, single-threaded, RAII wrappers for owned descriptors | Nothing needed C++20; ownership must be explicit (owned `UniqueFd` vs borrowed `int`) |
+| `/proc/self/fd` + `dirfd()` exclusion, not a loop to `RLIMIT_NOFILE` | Descriptors can exist above a lowered soft limit; the only self-contamination is identified exactly |
+| `fstat` for types, not procfs link text | Classifies the open object itself, also for deleted files |
+| nlohmann/json + strict application validator | Mature parser; duplicate keys, raw NUL bytes and out-of-range numbers are rejected explicitly because the library alone would accept or misread them |
+| Closed descriptor allowlist, no special case for 0–2 | Leaks are the main defect class to catch |
+| Blocking output, caller enforces timeouts | Simplicity; documented rather than half-guaranteed |
+
 ## Requirements
 
 * Linux with `/proc` mounted. The code relies on the `Umask:` field of
@@ -37,11 +78,14 @@ establish the host's whole core-dump policy.
 * To build: a C++17 compiler, CMake, nlohmann/json. To test: GoogleTest,
   Python 3 with pytest.
 
-**Only one configuration has been verified:** Ubuntu 26.04 (WSL2) with GCC
-15.2, CMake 4.2, GoogleTest 1.17, nlohmann/json 3.11.3, Python 3.14 and
-pytest 9.0 — see [docs/verification.md](docs/verification.md). The minimum
-versions in `CMakeLists.txt` (CMake 3.20, nlohmann/json 3.9, Python 3.8) are
-what the build files request, not versions that have been tested.
+**Verified configuration:** Ubuntu 26.04 (WSL2) with GCC 15.2, CMake 4.2,
+GoogleTest 1.17, nlohmann/json 3.11.3, Python 3.14 and pytest 9.0 — see
+[docs/verification.md](docs/verification.md). A GitHub Actions workflow
+([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the same
+verification on Ubuntu 24.04 (GCC 13); its results are on the repository's
+Actions tab. The minimum versions in `CMakeLists.txt` (CMake 3.20,
+nlohmann/json 3.9, Python 3.8) are what the build files request, not versions
+that have been tested.
 
 ## Install dependencies, build, test
 
@@ -65,6 +109,23 @@ The binary is `build/execcontract`. `cmake --install build` installs it to
 `/usr/local/bin` (use `--prefix` to change that). The full verification used
 for this release (normal + sanitizer builds, formatting) is
 `scripts/verify.sh`.
+
+### What the tests cover
+
+* **103 C++ unit tests** (GoogleTest): contract validation (types, bounds,
+  duplicates, depth, NUL bytes, UTF-8), evaluation and precedence, report
+  rendering, and the collectors against real directories, files, pipes and
+  sockets. Includes a fixed-seed 20 000-input mutation test of the contract
+  path.
+* **97 Python component tests** (pytest) that run the built binary under
+  controlled launch conditions: leaked, missing and mistyped descriptors,
+  the scanner-contamination case (fd 3 and fd 0), a descriptor above a
+  lowered soft limit, the 1024-descriptor cap, cwd through symlinks and
+  deleted directories, umask, both limits including `unlimited`, invalid
+  contracts, closed/full/broken output channels, inherited descriptors left
+  unread and unmoved, and the demo.
+* A recorded **mutation check** shows each important guard is load-bearing:
+  removing it makes tests fail ([docs/verification.md](docs/verification.md)).
 
 ## Usage
 
@@ -167,10 +228,11 @@ rationale is in [docs/requirements.md](docs/requirements.md).
 
 ### Encoding
 
-Linux paths are bytes; JSON is Unicode. The contract must be valid UTF-8
-(a leading byte-order mark is accepted; raw NUL bytes are rejected). If the observed working directory is not valid
-UTF-8, the `cwd` check is an inspection error (`cwd_not_utf8`) with a short
-diagnostic; bytes are never replaced or guessed.
+Linux paths are bytes; JSON is Unicode. The contract must be valid UTF-8 (a
+leading byte-order mark is accepted; raw NUL bytes are rejected). If the
+observed working directory is not valid UTF-8, the `cwd` check is an
+inspection error (`cwd_not_utf8`) with a short diagnostic; bytes are never
+replaced or guessed.
 
 ## Reading the report
 
@@ -266,6 +328,7 @@ descriptor, contract and report handles) as a first-class correctness issue.
 | [docs/essay.md](docs/essay.md) | Technical reflection |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, structure, tests, conventions |
 | [DEVELOPER_NOTES.md](DEVELOPER_NOTES.md) | Guided code walkthrough, ownership, APIs, precedence, rehearsal exercises |
+| [docs/INTERVIEW_PREPARATION.md](docs/INTERVIEW_PREPARATION.md) | Plain-language explanation, E1/E2, concepts, interview questions, authorship boundaries |
 | [ROADMAP.md](ROADMAP.md) | Exclusions, limitations, future work |
 
 ## Licence and third-party code

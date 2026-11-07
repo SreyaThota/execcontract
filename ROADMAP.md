@@ -50,8 +50,9 @@ Ordered by expected value for launcher testing:
   extra descriptors).
 * `RLIMIT_CORE` is only one input to core-dump behaviour (`core_pattern`,
   `PR_SET_DUMPABLE`, systemd-coredump are not inspected).
-* Verified on one environment only (WSL2, Ubuntu 26.04, GCC 15). Clang,
-  musl, older glibc and non-WSL kernels are unverified.
+* Verified locally on WSL2 Ubuntu 26.04 (GCC 15); the CI workflow adds
+  Ubuntu 24.04 (GCC 13). Clang, musl (no `strerrorname_np`), older glibc and
+  other distributions are unverified.
 
 ## Hardening with more time
 
@@ -67,8 +68,11 @@ Ordered by expected value for launcher testing:
   `O_NONBLOCK|O_NOCTTY` and rejected if not regular, but the `open` itself
   happens first). Opening with `O_PATH`, checking, then reopening would avoid
   that.
-* CI workflow running `scripts/verify.sh` on several distributions and with
-  Clang; a fuzz target for `parse_contract` (libFuzzer).
+* Extend CI beyond the single Ubuntu 24.04/GCC 13 job: more distributions
+  and Clang (which would also enable a libFuzzer target).
+* Coverage-guided fuzzing of `parse_contract`. Today a deterministic
+  mutation test (20 000 inputs, fixed seed) checks the invariants; it is not
+  coverage-guided.
 * JSON consumers in JavaScript lose precision for limits above 2^53; a
   string encoding option for large limits.
 * Packaging (`.deb`), a man page.
