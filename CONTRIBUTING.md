@@ -42,6 +42,8 @@ scripts/verify.sh            # build trees under ./build-verify
 The GitHub Actions workflow (`.github/workflows/ci.yml`) runs the same
 script on Ubuntu 24.04 for every push and pull request, plus the suite under
 `RLIMIT_NOFILE` 1024:1024 and 128:128.
+The code is formatted with clang-format 21; CI (clang-format 18) sets
+`EXECCONTRACT_SKIP_FORMAT=1`, so run the formatting check locally.
 
 `verify.sh` sets every test-relevant CMake option explicitly (so a stale
 cache cannot disable tests or leave sanitizers on in the normal build), fails

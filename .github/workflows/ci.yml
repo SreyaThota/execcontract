@@ -22,9 +22,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        # clang-format is deliberately not installed: its output differs
-        # between major versions, so the formatting check runs only in the
-        # reference environment (verify.sh reports it as NOT RUN here).
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -42,6 +39,12 @@ jobs:
           ulimit -Sn; ulimit -Hn; ulimit -Sc; ulimit -Hc; umask
 
       - name: Verify (normal + ASan/UBSan builds, unit + component tests)
+        # The runner image ships clang-format 18, whose output differs from
+        # the clang-format 21 the code is formatted with (first CI run:
+        # `struct stat st{}` vs `st {}`). Formatting is checked in the
+        # reference environment only; verify.sh prints the skip.
+        env:
+          EXECCONTRACT_SKIP_FORMAT: "1"
         run: scripts/verify.sh "$RUNNER_TEMP/verify"
 
       - name: Component tests under RLIMIT_NOFILE 1024:1024 and 128:128

@@ -59,7 +59,12 @@ build_and_test "$out/asan" "sanitizer build (Debug, ASan + UBSan; exact_fds comp
     -DCMAKE_BUILD_TYPE=Debug -DEXECCONTRACT_SANITIZE=ON
 
 step "formatting"
-if command -v clang-format >/dev/null 2>&1; then
+# clang-format output differs between major versions (the code follows
+# clang-format 21). Environments with another version set
+# EXECCONTRACT_SKIP_FORMAT=1; the skip is printed, never silent.
+if [ "${EXECCONTRACT_SKIP_FORMAT:-0}" = "1" ]; then
+    echo "clang-format: NOT RUN (EXECCONTRACT_SKIP_FORMAT=1; found: $(clang-format --version 2>/dev/null | head -n1 || echo none))"
+elif command -v clang-format >/dev/null 2>&1; then
     (cd "$root" && clang-format --dry-run --Werror src/*.cpp src/*.hpp tests/unit/*.cpp tests/unit/*.hpp)
     echo "clang-format: clean"
 else

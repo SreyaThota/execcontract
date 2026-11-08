@@ -30,8 +30,14 @@ follow it; they do not change what was tested.
 All final runs used a fresh `git clone` on the WSL ext4 file system.
 
 A second environment, Ubuntu 24.04 with GCC 13 on GitHub Actions, is defined
-in `.github/workflows/ci.yml`; its results are on the repository's Actions
-tab and are not reproduced here.
+in `.github/workflows/ci.yml`. Its first run (run 42427800544, commit
+`771ea5d`, 2026-11-08) built both configurations without warnings and passed
+**104/104 in the normal build and 104/104 in the ASan + UBSan build**, then
+failed at the formatting step: the runner image ships clang-format 18, which
+formats `struct stat st{}` differently from the clang-format 21 used here.
+The workflow now skips that one check with a printed reason
+(`EXECCONTRACT_SKIP_FORMAT=1`); later runs are on the repository's Actions
+tab.
 
 ## 2. Results at the final code commit `9ccb680`
 
@@ -179,6 +185,7 @@ Every behavioural fix landed with a test that fails on the previous version.
 | Review 2 | Overstated guarantees (non-blocking output, unchanged report file, atomic snapshot) | Documentation narrowed to what the code establishes |
 | Follow-up review | Demo fixture skipped the defective-launcher test at low limits | Prerequisite moved to the corrected-launcher tests |
 | Final audit | Borrowed-descriptor non-interference had no test; no input robustness test | Section 5 |
+| First CI run | Formatting check failed on the runner's clang-format 18 (version-dependent output), stopping the job after both test suites had passed | Check skipped in CI with a printed reason; still enforced in the reference environment |
 
 Essay length was checked by rendering (Edge headless, A4, 11 pt Times,
 2.5 cm margins): 2 pages.
@@ -188,7 +195,7 @@ Essay length was checked by rendering (Edge headless, A4, 11 pt Times,
 | Item | Status |
 |---|---|
 | The author's own execution of builds, tests, E1/E2 | Not done (by the author's account and these records) |
-| Second environment | Defined in CI (Ubuntu 24.04, GCC 13); not part of the runs above |
+| Second environment | CI on Ubuntu 24.04 / GCC 13: first run passed both builds' tests (section 1); formatting is not checked there |
 | Clang, musl, other distributions, non-WSL kernels | Not run |
 | Toolchain minimum versions in `CMakeLists.txt` | Requested by the build files, not tested |
 | A real procfs `readdir` failure | Not reproducible unprivileged; covered by the injected-`readdir` unit test |
