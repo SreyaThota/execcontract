@@ -1,5 +1,7 @@
 # ExecContract
 
+[![CI](https://github.com/SreyaThota/execcontract/actions/workflows/ci.yml/badge.svg)](https://github.com/SreyaThota/execcontract/actions/workflows/ci.yml)
+
 ExecContract is a small Linux executable that you start **in place of a
 service** during launcher integration tests. It inspects its own execution
 context, compares it with a declared *execution contract*, and prints a
@@ -78,14 +80,17 @@ alternatives: [docs/engineering-decisions.md](docs/engineering-decisions.md).
 * To build: a C++17 compiler, CMake, nlohmann/json. To test: GoogleTest,
   Python 3 with pytest.
 
-**Verified configuration:** Ubuntu 26.04 (WSL2) with GCC 15.2, CMake 4.2,
-GoogleTest 1.17, nlohmann/json 3.11.3, Python 3.14 and pytest 9.0 — see
-[docs/verification.md](docs/verification.md). A GitHub Actions workflow
-([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the same
-verification on Ubuntu 24.04 (GCC 13); its results are on the repository's
-Actions tab. The minimum versions in `CMakeLists.txt` (CMake 3.20,
-nlohmann/json 3.9, Python 3.8) are what the build files request, not versions
-that have been tested.
+**Verified in two environments** (details in
+[docs/verification.md](docs/verification.md)):
+
+| Environment | Toolchain | Result |
+|---|---|---|
+| Ubuntu 26.04, WSL2 (reference) | GCC 15.2, CMake 4.2, GoogleTest 1.17, nlohmann/json 3.11.3, Python 3.14, pytest 9.0 | Normal and ASan + UBSan builds pass all tests; formatting, clang-tidy, mutation check, descriptor-limit matrix |
+| Ubuntu 24.04, GitHub Actions ([ci.yml](.github/workflows/ci.yml)) | GCC 13.3, CMake 3.28, GoogleTest 1.14, nlohmann/json 3.11.3, Python 3.12, pytest 7.4 | Normal and ASan + UBSan builds pass all tests; also under `RLIMIT_NOFILE` 1024:1024 and 128:128 |
+
+The minimum versions in `CMakeLists.txt` (CMake 3.20, nlohmann/json 3.9,
+Python 3.8) are what the build files request, not versions that have been
+tested.
 
 ## Install dependencies, build, test
 
@@ -163,7 +168,8 @@ caller's leaked fd 3, cwd, umask and limits) and
 [launch-fixed.sh](examples/demo/launch-fixed.sh) (closes descriptors 3–9,
 `cd /`, `umask 0027`, `ulimit -S -n 1024`, `ulimit -S -c 0`). The first
 exits 1 (`violated`), the second 0 (`passed`). The corrected launcher needs
-an inherited hard `RLIMIT_NOFILE` ≥ 1024.
+an inherited hard `RLIMIT_NOFILE` ≥ 1024. A captured run with both reports
+is in [docs/demo.md](docs/demo.md).
 
 ### Using it in a test
 
@@ -325,6 +331,7 @@ descriptor, contract and report handles) as a first-class correctness issue.
 | [docs/architecture.md](docs/architecture.md) | Data flow, modules, observation order, ownership, failure handling |
 | [docs/engineering-decisions.md](docs/engineering-decisions.md) | Decisions, alternatives and trade-offs |
 | [docs/verification.md](docs/verification.md) | Evidence: environment, commands, results, traceability |
+| [docs/demo.md](docs/demo.md) | Captured demo run: defective vs corrected launcher |
 | [docs/essay.md](docs/essay.md) | Technical reflection |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, structure, tests, conventions |
 | [DEVELOPER_NOTES.md](DEVELOPER_NOTES.md) | Guided code walkthrough, ownership, APIs, precedence, rehearsal exercises |

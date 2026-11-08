@@ -50,8 +50,7 @@ Ordered by expected value for launcher testing:
   extra descriptors).
 * `RLIMIT_CORE` is only one input to core-dump behaviour (`core_pattern`,
   `PR_SET_DUMPABLE`, systemd-coredump are not inspected).
-* Verified locally on WSL2 Ubuntu 26.04 (GCC 15); the CI workflow adds
-  Ubuntu 24.04 (GCC 13). Clang, musl (no `strerrorname_np`), older glibc and
+* Verified on WSL2 Ubuntu 26.04 (GCC 15) and in CI on Ubuntu 24.04 (GCC 13). Clang, musl (no `strerrorname_np`), older glibc and
   other distributions are unverified.
 
 ## Hardening with more time

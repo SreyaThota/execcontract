@@ -29,15 +29,21 @@ follow it; they do not change what was tested.
 
 All final runs used a fresh `git clone` on the WSL ext4 file system.
 
-A second environment, Ubuntu 24.04 with GCC 13 on GitHub Actions, is defined
-in `.github/workflows/ci.yml`. Its first run (run 42427800544, commit
+A second environment, Ubuntu 24.04 on GitHub Actions, is defined in
+`.github/workflows/ci.yml` (versions from the run log: GCC 13.3.0, CMake
+3.28.3, GoogleTest 1.14.0, nlohmann/json 3.11.3, Python 3.12.3, pytest 7.4.4). Its first run (run 42427800544, commit
 `771ea5d`, 2026-11-08) built both configurations without warnings and passed
 **104/104 in the normal build and 104/104 in the ASan + UBSan build**, then
 failed at the formatting step: the runner image ships clang-format 18, which
 formats `struct stat st{}` differently from the clang-format 21 used here.
 The workflow now skips that one check with a printed reason
-(`EXECCONTRACT_SKIP_FORMAT=1`); later runs are on the repository's Actions
-tab.
+(`EXECCONTRACT_SKIP_FORMAT=1`). The next run (run 42428729962, commit
+`8957220`) **succeeded**: 103 unit tests and the component entry registered
+in both builds, 104/104 in the normal and in the ASan + UBSan build, and
+104/104 again under `RLIMIT_NOFILE` 1024:1024 and 128:128; formatting
+reported as not run (clang-format 18.1.3 found). The CI log shows the
+component suite as one CTest entry, so per-test pass/skip counts there are
+not recorded. Later runs are on the repository's Actions tab.
 
 ## 2. Results at the final code commit `9ccb680`
 
@@ -195,7 +201,7 @@ Essay length was checked by rendering (Edge headless, A4, 11 pt Times,
 | Item | Status |
 |---|---|
 | The author's own execution of builds, tests, E1/E2 | Not done (by the author's account and these records) |
-| Second environment | CI on Ubuntu 24.04 / GCC 13: first run passed both builds' tests (section 1); formatting is not checked there |
+| Second environment | CI on Ubuntu 24.04 / GCC 13 green (section 1); formatting is not checked there, and per-test component counts are not shown in its log |
 | Clang, musl, other distributions, non-WSL kernels | Not run |
 | Toolchain minimum versions in `CMakeLists.txt` | Requested by the build files, not tested |
 | A real procfs `readdir` failure | Not reproducible unprivileged; covered by the injected-`readdir` unit test |

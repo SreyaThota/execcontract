@@ -137,8 +137,8 @@ EXECCONTRACT_BIN=$PWD/build/execcontract python3 -m pytest tests/component -k sc
 - A report file that was opened and then failed mid-write can be empty or
   partial (exit 3 still signals it).
 - Sanitizer builds alter the observed state (ASan and `RLIMIT_CORE`).
-- Verified locally on one environment (WSL2 Ubuntu 26.04, GCC 15); the CI
-  workflow adds Ubuntu 24.04 with GCC 13. Other distributions, Clang and musl
+- Verified on WSL2 Ubuntu 26.04 (GCC 15) and, through CI, Ubuntu 24.04
+  (GCC 13). Other distributions, Clang and musl
   are untested (`strerrorname_np` also ties the code to glibc ≥ 2.32).
 
 ## 7. Rehearsal exercises

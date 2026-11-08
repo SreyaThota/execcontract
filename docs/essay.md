@@ -59,7 +59,8 @@ instrumentation can alter that inventory. Under a hard descriptor limit of
 128, 89 component tests pass and eight skip with stated reasons. All 17 injected mutants, including the E1 and E2 regressions, were detected at the final code revision.
 The record also documents a clean clone and the successful removal and
 restoration of the scanner and NUL guards. These checks were performed by
-agents on one WSL Linux configuration; other distributions remain unverified.
+agents on WSL and, through CI, on Ubuntu 24.04; other distributions remain
+unverified.
 
 ## Decisions and limitations
 
